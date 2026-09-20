@@ -1,10 +1,11 @@
-from fastapi import FastAPI,Depends
-from sqlalchemy.orm import Session
-from app.database import get_db
+from fastapi import FastAPI
+from backend.app.routes.projects_routes import router as projects_router
 
-app = FastAPI()
+app = FastAPI(title="NOVIQ")
+
+app.include_router(projects_router)
 
 
 @app.get("/")
-def root(db: Session = Depends(get_db)):
-    return {"message": "Welcome to Noviq"}
+def root():
+    return {"message": "NOVIQ API is running"}
