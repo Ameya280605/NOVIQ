@@ -28,3 +28,13 @@ def create_project(
     db.refresh(new_project)
 
     return new_project
+
+@router.get("/", response_model=list[ProjectResponse])
+def get_projects(
+    db: Session = Depends(get_db)
+):
+    projects = db.query(Project).filter(
+        Project.tenant_id == 2
+    ).all()
+
+    return projects
