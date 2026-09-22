@@ -7,6 +7,9 @@ class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
 
+class ProjectUpdate(BaseModel):
+    name: str
+    description: str | None = None
 
 class ProjectResponse(BaseModel):
     id: int
@@ -17,3 +20,4 @@ class ProjectResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+    
