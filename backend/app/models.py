@@ -15,23 +15,18 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(255))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    users: Mapped[list["User"]] = relationship(
-        back_populates="tenant"
-    )
-    
-    projects: Mapped[list["Project"]] = relationship(
-    back_populates="tenant"
-    )
+    users: Mapped[list["User"]] = relationship(back_populates="tenant")
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="tenant")
 
 
 class User(Base):
@@ -39,139 +34,90 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    tenant_id: Mapped[int] = mapped_column(
-        ForeignKey("tenants.id"),
-        nullable=False
-    )
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    email: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
-        nullable=False
-    )
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
-    password_hash: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    role: Mapped[str] = mapped_column(String(50), default="member", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    tenant: Mapped["Tenant"] = relationship(
-        back_populates="users"
-    )
-    
-    assigned_tasks: Mapped[list["Task"]] = relationship(
-    back_populates="assignee"
-    )
-    
+    tenant: Mapped["Tenant"] = relationship(back_populates="users")
+
+    assigned_tasks: Mapped[list["Task"]] = relationship(back_populates="assignee")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    tenant_id: Mapped[int] = mapped_column(
-        ForeignKey("tenants.id"),
-        nullable=False
-    )
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
-    name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    description: Mapped[str | None] = mapped_column(
-        String(1000),
-        nullable=True
-    )
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )
-    
-    tenant: Mapped["Tenant"] = relationship(
-    back_populates="projects"
-    )
-    
-    tasks: Mapped[list["Task"]] = relationship(
-    back_populates="project"
-    )
-    
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="projects")
+
+    tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id"),
-        nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
 
-    title: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    description: Mapped[str | None] = mapped_column(
-        String(2000),
-        nullable=True
-    )
+    description: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
-    status: Mapped[str] = mapped_column(
-        String(50),
-        default="todo",
-        nullable=False
-    )
+    status: Mapped[str] = mapped_column(String(50), default="todo", nullable=False)
 
-    priority: Mapped[str] = mapped_column(
-        String(50),
-        default="medium",
-        nullable=False
-    )
+    priority: Mapped[str] = mapped_column(String(50), default="medium", nullable=False)
 
     due_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc)
+        onupdate=lambda: datetime.now(timezone.utc),
     )
-    
-    project: Mapped["Project"] = relationship(
-    back_populates="tasks"
-    )
-    
+
+    project: Mapped["Project"] = relationship(back_populates="tasks")
+
     assigned_to: Mapped[int | None] = mapped_column(
-    ForeignKey("users.id"),
-    nullable=True
+        ForeignKey("users.id"), nullable=True
     )
-    
-    assignee: Mapped["User | None"] = relationship(
-    back_populates="assigned_tasks"
-    )
+
+    assignee: Mapped["User | None"] = relationship(back_populates="assigned_tasks")
