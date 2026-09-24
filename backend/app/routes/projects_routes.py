@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models import Project
 from backend.app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
+from backend.app.utils.jwt import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -22,14 +23,40 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[ProjectResponse])
-def get_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).filter(Project.tenant_id == 2).all()
+def get_projects(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    projects = db.query(Project).filter(
+        Project.tenant_id == current_user["tenant_id"]
+    ).all()
 
     return projects
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.tenant_id == current_user["tenant_id"]
+    ).first()
+
+    if not project:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found"
+        )
+
+    return project
+
+@router.put("/{project_id}", response_model=ProjectResponse)
+def update_project(
+    project_id: int, project_data: ProjectUpdate, db: Session = Depends(get_db)
+):
     project = (
         db.query(Project)
         .filter(Project.id == project_id, Project.tenant_id == 2)
@@ -39,29 +66,6 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    return project
-
-@router.put("/{project_id}", response_model=ProjectResponse)
-def update_project(
-    project_id: int,
-    project_data: ProjectUpdate,
-    db: Session = Depends(get_db)
-):
-    project = (
-        db.query(Project)
-        .filter(
-            Project.id == project_id,
-            Project.tenant_id == 2
-        )
-        .first()
-    )
-
-    if not project:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found"
-        )
-
     project.name = project_data.name
     project.description = project_data.description
 
@@ -70,29 +74,19 @@ def update_project(
 
     return project
 
+
 @router.delete("/{project_id}")
-def delete_project(
-    project_id: int,
-    db: Session = Depends(get_db)
-):
+def delete_project(project_id: int, db: Session = Depends(get_db)):
     project = (
         db.query(Project)
-        .filter(
-            Project.id == project_id,
-            Project.tenant_id == 2
-        )
+        .filter(Project.id == project_id, Project.tenant_id == 2)
         .first()
     )
 
     if not project:
-        raise HTTPException(
-            status_code=404,
-            detail="Project not found"
-        )
+        raise HTTPException(status_code=404, detail="Project not found")
 
     db.delete(project)
     db.commit()
 
-    return {
-        "message": "Project deleted successfully"
-    }
+    return {"message": "Project deleted successfully"}
