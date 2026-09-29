@@ -34,3 +34,11 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     due_date: datetime | None = None
     assigned_to: int | None = None
+    
+    
+class TaskListResponse(BaseModel):
+    items: list[TaskResponse]
+    page: int
+    limit: int
+    total: int
+    total_pages: int

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.models import Task, Project
-from backend.app.schemas.tasks import TaskCreate, TaskResponse, TaskUpdate
+from backend.app.schemas.tasks import TaskCreate, TaskResponse, TaskUpdate, TaskListResponse
 from backend.app.utils.jwt import get_current_user
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -44,7 +44,7 @@ def create_task(
     return new_task
 
 
-@router.get("/", response_model=list[TaskResponse])
+@router.get("/", response_model=TaskListResponse)
 def get_tasks(
     status: str | None = None,
     priority: str | None = None,
@@ -75,6 +75,8 @@ def get_tasks(
     if assigned_to:
         query = query.filter(Task.assigned_to == assigned_to)
 
+    total = query.count()
+
     offset = (page - 1) * limit
 
     tasks = (
@@ -84,8 +86,15 @@ def get_tasks(
         .all()
     )
 
-    return tasks
+    total_pages = (total + limit - 1) // limit
 
+    return {
+        "items": tasks,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "total_pages": total_pages,
+    }
 
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(
