@@ -46,14 +46,44 @@ def create_task(
 
 @router.get("/", response_model=list[TaskResponse])
 def get_tasks(
-    db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)
+    status: str | None = None,
+    priority: str | None = None,
+    project_id: int | None = None,
+    assigned_to: int | None = None,
+    page: int = 1,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
-    tasks = (
+    query = (
         db.query(Task)
         .join(Project, Task.project_id == Project.id)
-        .filter(Project.tenant_id == current_user["tenant_id"])
+        .filter(
+            Project.tenant_id == current_user["tenant_id"]
+        )
+    )
+
+    if status:
+        query = query.filter(Task.status == status)
+
+    if priority:
+        query = query.filter(Task.priority == priority)
+
+    if project_id:
+        query = query.filter(Task.project_id == project_id)
+
+    if assigned_to:
+        query = query.filter(Task.assigned_to == assigned_to)
+
+    offset = (page - 1) * limit
+
+    tasks = (
+        query
+        .offset(offset)
+        .limit(limit)
         .all()
     )
+
     return tasks
 
 
