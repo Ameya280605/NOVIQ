@@ -5,6 +5,7 @@ from backend.app.database import get_db
 from backend.app.models import Project
 from backend.app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
 from backend.app.utils.jwt import get_current_user
+from backend.app.utils.roles import require_roles
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -13,13 +14,14 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 def create_project(
     project: ProjectCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("owner", "admin", "manager")),
 ):
     new_project = Project(
         tenant_id=current_user["tenant_id"],
         name=project.name,
         description=project.description,
     )
+
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
@@ -63,7 +65,7 @@ def update_project(
     project_id: int,
     project_data: ProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("owner", "admin", "manager")),
 ):
     project = (
         db.query(Project)
@@ -90,7 +92,9 @@ def update_project(
 def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(
+        require_roles("owner", "admin")
+    ),
 ):
     project = (
         db.query(Project)
