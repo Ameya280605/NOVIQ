@@ -3,8 +3,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.models import Task, Project
-from backend.app.schemas.tasks import TaskCreate, TaskResponse, TaskUpdate, TaskListResponse
+from backend.app.schemas.tasks import (
+    TaskCreate,
+    TaskResponse,
+    TaskUpdate,
+    TaskListResponse,
+)
 from backend.app.utils.jwt import get_current_user
+from backend.app.utils.roles import require_roles
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -13,7 +19,7 @@ router = APIRouter(prefix="/tasks", tags=["Tasks"])
 def create_task(
     task: TaskCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("owner", "admin", "manager")),
 ):
     project = (
         db.query(Project)
@@ -58,9 +64,7 @@ def get_tasks(
     query = (
         db.query(Task)
         .join(Project, Task.project_id == Project.id)
-        .filter(
-            Project.tenant_id == current_user["tenant_id"]
-        )
+        .filter(Project.tenant_id == current_user["tenant_id"])
     )
 
     if status:
@@ -79,12 +83,7 @@ def get_tasks(
 
     offset = (page - 1) * limit
 
-    tasks = (
-        query
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    tasks = query.offset(offset).limit(limit).all()
 
     total_pages = (total + limit - 1) // limit
 
@@ -95,6 +94,7 @@ def get_tasks(
         "total": total,
         "total_pages": total_pages,
     }
+
 
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(
@@ -119,7 +119,7 @@ def update_task(
     task_id: int,
     task_data: TaskUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("owner", "admin", "manager")),
 ):
     task = (
         db.query(Task)
@@ -145,7 +145,7 @@ def update_task(
 def delete_task(
     task_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_roles("owner", "admin")),
 ):
     task = (
         db.query(Task)
