@@ -5,7 +5,7 @@ from backend.app.database import get_db
 from backend.app.models import User
 from backend.app.schemas.users import UserCreate, UserResponse, UserLogin
 from backend.app.utils.security import hash_password, verify_password
-from backend.app.utils.jwt import create_access_token
+from backend.app.utils.jwt import create_access_token,get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -50,3 +50,17 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
     )
 
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/members", response_model=list[UserResponse])
+def get_members(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    members = (
+        db.query(User)
+        .filter(User.tenant_id == current_user["tenant_id"])
+        .all()
+    )
+
+    return members
