@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
 from backend.app.models import User
-from backend.app.schemas.users import UserCreate, UserResponse, UserLogin
+from backend.app.schemas.users import UserCreate, UserResponse, UserLogin, TeamMemberCreate
 from backend.app.utils.security import hash_password, verify_password
 from backend.app.utils.jwt import create_access_token,get_current_user
+from backend.app.utils.roles import require_roles
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -64,3 +65,37 @@ def get_members(
     )
 
     return members
+
+@router.post("/members", response_model=UserResponse)
+def add_team_member(
+    member: TeamMemberCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_roles("owner", "admin")
+    ),
+):
+    existing_user = (
+        db.query(User)
+        .filter(User.email == member.email)
+        .first()
+    )
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    new_member = User(
+        tenant_id=current_user["tenant_id"],
+        name=member.name,
+        email=member.email,
+        password_hash=hash_password(member.password),
+        role=member.role,
+    )
+
+    db.add(new_member)
+    db.commit()
+    db.refresh(new_member)
+
+    return new_member

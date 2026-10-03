@@ -10,6 +10,13 @@ class UserCreate(BaseModel):
     tenant_id: int
 
 
+class TeamMemberCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str = "member"
+
+
 class UserLogin(BaseModel):
     email: str
     password: str
