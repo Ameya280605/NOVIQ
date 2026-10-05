@@ -4,17 +4,21 @@ from pydantic import BaseModel, ConfigDict
 
 
 class UserCreate(BaseModel):
+    company_name: str
     name: str
     email: str
     password: str
-    tenant_id: int
-
+    
 
 class TeamMemberCreate(BaseModel):
     name: str
     email: str
     password: str
     role: str = "member"
+
+
+class RoleUpdate(BaseModel):
+    role: str
 
 
 class UserLogin(BaseModel):
