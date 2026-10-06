@@ -136,6 +136,12 @@ def update_member_role(
             status_code=404,
             detail="User not found"
         )
+    
+    if role_data.role == "owner" and current_user["role"] != "owner":
+        raise HTTPException(
+        status_code=403,
+        detail="Only owners can assign the owner role"
+    )
 
     member.role = role_data.role
 
