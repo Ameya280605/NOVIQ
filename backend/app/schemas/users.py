@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+from typing import Literal
 
 
 class UserCreate(BaseModel):
@@ -18,7 +19,7 @@ class TeamMemberCreate(BaseModel):
 
 
 class RoleUpdate(BaseModel):
-    role: str
+    role: Literal["owner", "admin", "manager", "member"]
 
 
 class UserLogin(BaseModel):
