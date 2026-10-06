@@ -121,3 +121,43 @@ class Task(Base):
     )
 
     assignee: Mapped["User | None"] = relationship(back_populates="assigned_tasks")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"),
+        nullable=False
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=False
+    )
+
+    action: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+
+    resource_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False
+    )
+
+    resource_id: Mapped[int | None] = mapped_column(
+        nullable=True
+    )
+
+    details: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )

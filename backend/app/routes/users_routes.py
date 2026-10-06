@@ -2,11 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
-from backend.app.models import User,Tenant
-from backend.app.schemas.users import UserCreate, UserResponse, UserLogin, TeamMemberCreate, RoleUpdate
+from backend.app.models import User, Tenant
+from backend.app.schemas.users import (
+    UserCreate,
+    UserResponse,
+    UserLogin,
+    TeamMemberCreate,
+    RoleUpdate,
+)
 from backend.app.utils.security import hash_password, verify_password
-from backend.app.utils.jwt import create_access_token,get_current_user
+from backend.app.utils.jwt import create_access_token, get_current_user
 from backend.app.utils.roles import require_roles
+from backend.app.utils.audit import create_audit_log
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -16,14 +23,9 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == user.email).first()
 
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-    new_tenant = Tenant(
-        name=user.company_name
-    )
+    new_tenant = Tenant(name=user.company_name)
 
     db.add(new_tenant)
     db.flush()
@@ -69,11 +71,7 @@ def get_members(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    members = (
-        db.query(User)
-        .filter(User.tenant_id == current_user["tenant_id"])
-        .all()
-    )
+    members = db.query(User).filter(User.tenant_id == current_user["tenant_id"]).all()
 
     return members
 
@@ -82,21 +80,12 @@ def get_members(
 def add_team_member(
     member: TeamMemberCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(
-        require_roles("owner", "admin")
-    ),
+    current_user: dict = Depends(require_roles("owner", "admin")),
 ):
-    existing_user = (
-        db.query(User)
-        .filter(User.email == member.email)
-        .first()
-    )
+    existing_user = db.query(User).filter(User.email == member.email).first()
 
     if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
+        raise HTTPException(status_code=400, detail="Email already registered")
 
     new_member = User(
         tenant_id=current_user["tenant_id"],
@@ -118,9 +107,7 @@ def update_member_role(
     user_id: int,
     role_data: RoleUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(
-        require_roles("owner", "admin")
-    ),
+    current_user: dict = Depends(require_roles("owner", "admin")),
 ):
     member = (
         db.query(User)
@@ -132,20 +119,29 @@ def update_member_role(
     )
 
     if not member:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found"
-        )
-    
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_role = member.role
+
     if role_data.role == "owner" and current_user["role"] != "owner":
         raise HTTPException(
-        status_code=403,
-        detail="Only owners can assign the owner role"
-    )
+            status_code=403, detail="Only owners can assign the owner role"
+        )
 
     member.role = role_data.role
 
+    create_audit_log(
+        db=db,
+        tenant_id=current_user["tenant_id"],
+        user_id=int(current_user["sub"]),
+        action="role_updated",
+        resource_type="user",
+        resource_id=member.id,
+        details=f"Role changed from {old_role} to {role_data.role}",
+    )
+
     db.commit()
+
     db.refresh(member)
 
     return member
