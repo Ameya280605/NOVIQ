@@ -77,6 +77,92 @@ distribution arrays of `{ "name", "count" }`, and the corresponding
 project/team/deadline arrays. Empty datasets return zero counts and
 percentages, with empty arrays where there are no matching records.
 
+## Project risk and bottleneck analysis
+
+### `GET /projects/{project_id}/risk-analysis`
+
+Requires a bearer JWT for a current database user with a tenant role of
+`owner`, `admin`, `manager`, or `member`. The project is looked up using both
+its ID and the authenticated user's tenant ID; a missing or cross-tenant
+project returns `404`. The response contains a `risk_score` from 0 to 100,
+`risk_label` (`healthy`, `watch`, or `at_risk`), evidence-based `reasons`,
+`bottlenecks` with recommended actions, current `metrics`, UTC `generated_at`,
+and `scoring_version`.
+
+The deterministic, rule-based scoring configuration is centrally versioned as
+`1.0`. It is an operational indicator, not an ML prediction, probability, or
+guarantee. `healthy` is 0–19, `watch` is 20–49, and `at_risk` is 50–100.
+Contributions are added and the final total is capped at 100:
+
+| Signal | Weight |
+| --- | --- |
+| Each open overdue task | 12 points, at most 36 |
+| Each open task due within the next 7 days | 6 points, at most 18 |
+| Each currently blocked open task | 8 points, at most 24 |
+| Each open task not updated for at least 14 days | 3 points, at most 12 |
+| Active/planned/on-hold project not updated for at least 14 days | 8 points |
+| Highest assignee share at or above 60% of at least 3 open assigned tasks | 10 points |
+| Highest assignee share at or above 75% of at least 3 open assigned tasks | 15 points instead |
+
+“Open” means any task not in `completed`; a task can contribute to more than
+one signal. Missing due dates do not incur deadline points. All timestamps are
+compared in UTC; a naive stored timestamp is interpreted as UTC. Staleness uses
+the existing `updated_at` values and does not infer that work was inactive for
+reasons beyond the absence of updates.
+
+Bottlenecks include tasks that entered `blocked` at least twice according to
+`task_status_changed` audit records and an assignee with at least 5 open tasks
+in the project. Recommendations are tied to those observable conditions.
+Assignee IDs are used only to describe task allocation; no personal,
+demographic, or protected attributes are used. The current schema has no task
+dependency/predecessor relationship, so delayed predecessor detection is not
+implemented. Audit history only reflects events recorded since audit logging
+was enabled; older blocked-state repetitions may not be detectable.
+
+Example:
+
+```json
+{
+  "project_id": 31,
+  "project_name": "Website refresh",
+  "project_status": "active",
+  "risk_score": 60,
+  "risk_label": "at_risk",
+  "reasons": [
+    {
+      "code": "overdue_tasks",
+      "message": "3 open tasks are overdue.",
+      "count": 3,
+      "points": 36
+    },
+    {
+      "code": "blocked_tasks",
+      "message": "2 open tasks are currently blocked.",
+      "count": 2,
+      "points": 16
+    },
+    {
+      "code": "stale_project",
+      "message": "The project has not been updated in at least 14 days.",
+      "count": 1,
+      "points": 8
+    }
+  ],
+  "bottlenecks": [],
+  "metrics": {
+    "open_tasks": 8,
+    "overdue_tasks": 3,
+    "due_soon_tasks": 0,
+    "blocked_tasks": 2,
+    "stale_tasks": 0,
+    "assigned_open_tasks": 0,
+    "top_assignee_open_tasks": 0
+  },
+  "generated_at": "2026-11-08T09:51:02Z",
+  "scoring_version": "1.0"
+}
+```
+
 ## Supported audit events
 
 | Action | Resource | When recorded |
