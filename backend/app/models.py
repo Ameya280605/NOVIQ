@@ -133,6 +133,19 @@ class Project(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('todo', 'in_progress', 'in_review', 'completed', 'blocked')",
+            name="ck_tasks_status",
+        ),
+        CheckConstraint(
+            "priority IN ('low', 'medium', 'high', 'critical')",
+            name="ck_tasks_priority",
+        ),
+        Index("ix_tasks_project_status", "project_id", "status"),
+        Index("ix_tasks_assigned_status", "assigned_to", "status"),
+        Index("ix_tasks_due_date", "due_date"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -145,6 +158,8 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(50), default="todo", nullable=False)
 
     priority: Mapped[str] = mapped_column(String(50), default="medium", nullable=False)
+
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

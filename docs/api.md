@@ -25,6 +25,101 @@ project/assignee IDs). The audit utility drops metadata outside its allowlist an
 discards secret-like keys. Passwords and user-provided descriptions are not
 copied into audit metadata.
 
+## Task management
+
+Every task belongs to one project. Task endpoints use the project's tenant for
+scoping and require a valid bearer JWT for a current user in that tenant.
+Tenant members may list and view tasks. Creating and updating tasks requires
+the current database role `owner`, `admin`, or `manager`; only `owner` and
+`admin` may delete tasks.
+
+### `POST /tasks/`
+
+Creates a task in an existing tenant project. `project_id` and `title` are
+required. Optional fields are `description`, `status`, `priority`, `start_date`,
+`due_date`, and `assigned_to`. Status defaults to `todo`; priority defaults to
+`medium`. Status values: `todo`, `in_progress`, `in_review`, `completed`,
+`blocked`. Priority values: `low`, `medium`, `high`, `critical`. A supplied
+assignee must be a user in the same tenant as the project.
+
+```json
+{
+  "project_id": 31,
+  "title": "Review homepage",
+  "description": "Check the responsive layout",
+  "status": "todo",
+  "priority": "high",
+  "start_date": "2026-11-10",
+  "due_date": "2026-11-20T17:00:00Z",
+  "assigned_to": 12
+}
+```
+
+### `GET /tasks/` and `GET /tasks/{task_id}`
+
+The list endpoint returns `items`, `page`, `limit`, `total`, and `total_pages`.
+It supports these query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `project_id` | Filter to a project in the authenticated tenant |
+| `assigned_to` | Filter by assignee user ID |
+| `status` | Exact task status |
+| `priority` | Exact task priority |
+| `search` | Case-insensitive substring in task title |
+| `page` | 1-based page number (default `1`) |
+| `limit` | Results per page, from `1` to `100` (default `10`) |
+| `sort_by` | `created_at`, `updated_at`, `title`, `status`, `priority`, `start_date`, or `due_date` |
+| `sort_order` | `asc` or `desc` (default `desc`) |
+
+`assigned_to` is retained as the assignee filter name for compatibility with
+the existing API. Tasks or projects from another tenant are returned as `404`
+for item lookups and are never included in list results.
+
+### `PUT /tasks/{task_id}`
+
+Updates only the supplied fields. The project can be changed to another
+project in the same tenant. Assignees can be changed or cleared with
+`"assigned_to": null`. Status and priority must match the supported values.
+`start_date` is a `YYYY-MM-DD` date and must not be after `due_date` (an
+ISO-8601 datetime). Invalid dates or enum values return `422`; a disallowed
+status transition returns `409`; unknown or cross-tenant project/assignee
+references return `404`.
+
+Allowed status transitions:
+
+| Current status | Next status |
+| --- | --- |
+| `todo` | `in_progress`, `blocked` |
+| `in_progress` | `todo`, `in_review`, `completed`, `blocked` |
+| `in_review` | `in_progress`, `completed`, `blocked` |
+| `blocked` | `todo`, `in_progress` |
+| `completed` | No further transition |
+
+Example response:
+
+```json
+{
+  "id": 45,
+  "project_id": 31,
+  "title": "Review homepage",
+  "description": "Check the responsive layout",
+  "status": "in_progress",
+  "priority": "high",
+  "start_date": "2026-11-10",
+  "due_date": "2026-11-20T17:00:00Z",
+  "assigned_to": 12,
+  "created_at": "2026-11-08T06:08:00Z",
+  "updated_at": "2026-11-08T06:10:00Z"
+}
+```
+
+### `DELETE /tasks/{task_id}`
+
+Only owners and admins may delete a task. Successful task changes and their
+audit entries are committed in one database transaction. Unchanged updates
+produce no audit records; status and assignment changes use dedicated events.
+
 ## Project management
 
 All project endpoints require a valid bearer JWT for a current user in the
