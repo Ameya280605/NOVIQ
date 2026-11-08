@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from backend.app.routes.assistant_routes import router as assistant_router
 from backend.app.routes.audit_logs_routes import router as audit_logs_router
 from backend.app.routes.dashboard_routes import router as dashboard_router
 from backend.app.routes.projects_routes import router as projects_router
@@ -15,6 +16,7 @@ app.include_router(tasks_router)
 app.include_router(users_router)
 app.include_router(audit_logs_router)
 app.include_router(dashboard_router)
+app.include_router(assistant_router)
 
 
 @app.get("/")

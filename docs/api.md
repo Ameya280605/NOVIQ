@@ -163,6 +163,85 @@ Example:
 }
 ```
 
+## Tenant-aware assistant
+
+### `POST /assistant/query`
+
+Requires a bearer JWT for a current database user with role `owner`, `admin`,
+`manager`, or `member`. The request accepts a question and an optional project
+ID; extra fields (including `tenant_id`) are rejected. Tenant and actor identity
+come only from the authenticated user's current database record.
+
+```json
+{
+  "question": "Explain the risk for project 31",
+  "project_id": 31
+}
+```
+
+The assistant currently runs in local, deterministic rules mode. It supports
+project status, overdue tasks, open task workload by user ID, project risk
+explanations, and project summaries. Only explicit read-only tools for these
+operations are available. Project-specific tools query the project by both
+project ID and authenticated tenant ID. Task lists are tenant-scoped through
+their projects. Responses include the source records and their IDs; the
+assistant does not infer unavailable details. Results are limited to the
+first 50 records for list-style tools.
+
+Questions that do not match a supported operation return an `unknown` intent
+and describe supported topics. Project-specific risk/summary questions without
+a project ID ask for one. Requests to disclose instructions, credentials, or
+secrets are refused without querying the data tools. This is a defense-in-depth
+guard; local-only execution means user text is never inserted into an external
+model prompt.
+
+No AI provider or AI-specific package is configured in this repository.
+`NOVIQ_AI_PROVIDER` defaults to `local`; any non-local value fails closed with
+HTTP `503`. No prompts, project data, or credentials are sent externally. An
+external provider must not be enabled until data handling, retention, and
+tenant-isolation requirements have been explicitly approved and implemented.
+Safe usage logs contain only the selected intent, outcome, and local provider
+label; prompts and answers are not logged or persisted.
+
+Example response:
+
+```json
+{
+  "answer": "Project 31 has operational risk score 20 (watch). 2 open tasks are due within 7 days.",
+  "intent": "risk_explanation",
+  "sources": [
+    {
+      "project_id": 31,
+      "risk_score": 20,
+      "risk_label": "watch",
+      "reasons": [
+        {
+          "code": "due_soon_tasks",
+          "message": "2 open tasks are due within 7 days.",
+          "count": 2,
+          "points": 12
+        },
+        {
+          "code": "stale_project",
+          "message": "The project has not been updated in at least 14 days.",
+          "count": 1,
+          "points": 8
+        }
+      ],
+      "bottlenecks": [],
+      "scoring_version": "1.0"
+    }
+  ],
+  "generated_at": "2026-11-08T10:02:49Z",
+  "assistant_version": "1.0",
+  "provider": "local_rules"
+}
+```
+
+The assistant is not a general-purpose chatbot and does not execute SQL, mutate
+records, or answer questions outside the approved tools. Risk information uses
+the Module 9 operational score and inherits its audit-history limitations.
+
 ## Supported audit events
 
 | Action | Resource | When recorded |
