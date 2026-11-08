@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import DateTime, String, ForeignKey
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -125,6 +126,12 @@ class Task(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_audit_logs_tenant_action", "tenant_id", "action"),
+        Index("ix_audit_logs_tenant_resource_type", "tenant_id", "resource_type"),
+        Index("ix_audit_logs_tenant_user", "tenant_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -155,6 +162,12 @@ class AuditLog(Base):
     details: Mapped[str | None] = mapped_column(
         String(1000),
         nullable=True
+    )
+
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata",
+        JSON,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

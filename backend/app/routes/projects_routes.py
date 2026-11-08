@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models import Project
 from backend.app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
+from backend.app.utils.audit import create_audit_log
 from backend.app.utils.jwt import get_current_user
 from backend.app.utils.roles import require_roles
 
@@ -23,6 +24,15 @@ def create_project(
     )
 
     db.add(new_project)
+    db.flush()
+    create_audit_log(
+        db=db,
+        tenant_id=current_user["tenant_id"],
+        user_id=int(current_user["sub"]),
+        action="project_created",
+        resource_type="project",
+        resource_id=new_project.id,
+    )
     db.commit()
     db.refresh(new_project)
 
@@ -79,9 +89,25 @@ def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    changed_fields = []
+    if project.name != project_data.name:
+        changed_fields.append("name")
+    if project.description != project_data.description:
+        changed_fields.append("description")
+
     project.name = project_data.name
     project.description = project_data.description
 
+    if changed_fields:
+        create_audit_log(
+            db=db,
+            tenant_id=current_user["tenant_id"],
+            user_id=int(current_user["sub"]),
+            action="project_updated",
+            resource_type="project",
+            resource_id=project.id,
+            metadata={"changed_fields": changed_fields},
+        )
     db.commit()
     db.refresh(project)
 
@@ -108,6 +134,15 @@ def delete_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    project_id = project.id
+    create_audit_log(
+        db=db,
+        tenant_id=current_user["tenant_id"],
+        user_id=int(current_user["sub"]),
+        action="project_deleted",
+        resource_type="project",
+        resource_id=project_id,
+    )
     db.delete(project)
     db.commit()
 

@@ -39,6 +39,16 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     )
 
     db.add(new_user)
+    db.flush()
+    create_audit_log(
+        db=db,
+        tenant_id=new_tenant.id,
+        user_id=new_user.id,
+        action="user_created",
+        resource_type="user",
+        resource_id=new_user.id,
+        metadata={"role": new_user.role},
+    )
     db.commit()
     db.refresh(new_user)
 
@@ -96,6 +106,16 @@ def add_team_member(
     )
 
     db.add(new_member)
+    db.flush()
+    create_audit_log(
+        db=db,
+        tenant_id=current_user["tenant_id"],
+        user_id=int(current_user["sub"]),
+        action="member_created",
+        resource_type="user",
+        resource_id=new_member.id,
+        metadata={"role": new_member.role},
+    )
     db.commit()
     db.refresh(new_member)
 
@@ -121,24 +141,24 @@ def update_member_role(
     if not member:
         raise HTTPException(status_code=404, detail="User not found")
 
-    old_role = member.role
-
     if role_data.role == "owner" and current_user["role"] != "owner":
         raise HTTPException(
             status_code=403, detail="Only owners can assign the owner role"
         )
 
+    old_role = member.role
     member.role = role_data.role
 
-    create_audit_log(
-        db=db,
-        tenant_id=current_user["tenant_id"],
-        user_id=int(current_user["sub"]),
-        action="role_updated",
-        resource_type="user",
-        resource_id=member.id,
-        details=f"Role changed from {old_role} to {role_data.role}",
-    )
+    if old_role != role_data.role:
+        create_audit_log(
+            db=db,
+            tenant_id=current_user["tenant_id"],
+            user_id=int(current_user["sub"]),
+            action="role_updated",
+            resource_type="user",
+            resource_id=member.id,
+            metadata={"old_role": old_role, "new_role": role_data.role},
+        )
 
     db.commit()
 
