@@ -1,5 +1,82 @@
 # NOVIQ API: audit logging
 
+## Dashboard and analytics
+
+All dashboard endpoints require a bearer JWT for a user whose current
+database role is `owner`, `admin`, `manager`, or `member`. The tenant is taken
+from the authenticated user's database record; tenant identifiers supplied by
+clients are ignored. Results are tenant-scoped, including task aggregates
+through each task's project. No dashboard endpoint changes data.
+
+### `GET /dashboard/overview`
+
+Returns project and task totals, active/completed projects, completed/pending/
+overdue tasks, and completion percentages. `start_date` and `end_date` are
+optional ISO `YYYY-MM-DD` dates that filter project and task creation dates
+inclusively. With neither supplied, the overview covers all records. When both
+are supplied, the range may span at most 366 days. Project completion
+percentage is completed projects divided by projects in scope; task completion
+percentage is completed tasks divided by tasks in scope. Pending tasks are
+all tasks not in `completed`, including blocked tasks. Overdue tasks are
+non-completed tasks whose due timestamp is before the current UTC time.
+
+### `GET /dashboard/tasks`
+
+Returns task counts grouped by status and priority, overdue and upcoming task
+deadlines, and a daily completed-task trend. `start_date` and `end_date` are
+optional inclusive `YYYY-MM-DD` dates, with a maximum span of 366 days.
+Without them, the analytical range is the trailing 30 calendar days including
+today. Status/priority counts and team workload use task creation dates;
+completion trends use the task's last update date for tasks currently in the
+completed state. Overdue deadlines use due dates within the analytical range.
+Upcoming deadlines start today and end at `end_date`, or 30 days from today if
+`end_date` is omitted. Each deadline list is ordered by date and capped at 100.
+
+### `GET /dashboard/projects`
+
+Returns project counts grouped by status, task completion progress for each
+project created in the analytical date range, and upcoming project deadlines.
+The date parameters and default range match `/dashboard/tasks`. Progress uses
+all current tasks in each included project, not only tasks created in the
+date range. Upcoming deadlines include non-completed/non-cancelled projects
+from today through `end_date`, or the next 30 days when `end_date` is omitted.
+The deadline list is ordered by date and capped at 100.
+
+### `GET /dashboard/team`
+
+Returns one entry for each user in the authenticated tenant, including members
+with no assigned tasks. Assigned, completed, and pending counts include tasks
+created in the analytical date range; workload percentage is that member's
+share of all assigned tasks in the returned team. The date parameters and
+default range match `/dashboard/tasks`.
+
+Example response from `GET /dashboard/overview`:
+
+```json
+{
+  "start_date": null,
+  "end_date": null,
+  "projects": {
+    "total": 12,
+    "active": 5,
+    "completed": 3,
+    "completion_percentage": 25.0
+  },
+  "tasks": {
+    "total": 80,
+    "completed": 30,
+    "pending": 50,
+    "overdue": 7,
+    "completion_percentage": 37.5
+  }
+}
+```
+
+Analytics responses include the effective `start_date` and `end_date`,
+distribution arrays of `{ "name", "count" }`, and the corresponding
+project/team/deadline arrays. Empty datasets return zero counts and
+percentages, with empty arrays where there are no matching records.
+
 ## Supported audit events
 
 | Action | Resource | When recorded |
