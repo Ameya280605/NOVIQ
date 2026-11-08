@@ -20,6 +20,10 @@ _ALLOWED_METADATA_KEYS = {
     "new_assigned_to",
     "old_status",
     "new_status",
+    "status",
+    "project_manager_id",
+    "old_project_manager_id",
+    "new_project_manager_id",
 }
 
 

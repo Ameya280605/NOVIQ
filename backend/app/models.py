@@ -1,7 +1,15 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, JSON, String
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    JSON,
+    String,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -59,9 +67,22 @@ class User(Base):
 
     assigned_tasks: Mapped[list["Task"]] = relationship(back_populates="assignee")
 
+    managed_projects: Mapped[list["Project"]] = relationship(
+        back_populates="project_manager",
+        foreign_keys="Project.project_manager_id",
+    )
+
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned', 'active', 'on_hold', 'completed', 'cancelled')",
+            name="ck_projects_status",
+        ),
+        Index("ix_projects_tenant_status", "tenant_id", "status"),
+        Index("ix_projects_tenant_manager", "tenant_id", "project_manager_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -70,6 +91,25 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
+    status: Mapped[str] = mapped_column(
+        String(50), default="planned", nullable=False
+    )
+
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    target_deadline: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )
+
+    completion_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )
+
+    project_manager_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -84,6 +124,11 @@ class Project(Base):
     tenant: Mapped["Tenant"] = relationship(back_populates="projects")
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project")
+
+    project_manager: Mapped["User | None"] = relationship(
+        back_populates="managed_projects",
+        foreign_keys=[project_manager_id],
+    )
 
 
 class Task(Base):
