@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models import Project
 from backend.app.schemas.project_risk import ProjectRiskResponse
-from backend.app.services.project_risk import analyze_project_risk
+from backend.app.services.project_risk_cache import get_project_risk
 from backend.app.utils.roles import require_roles
 
 router = APIRouter(prefix="/projects", tags=["Project Risk Analysis"])
@@ -27,4 +27,4 @@ def get_project_risk_analysis(
     )
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return analyze_project_risk(db, project)
+    return get_project_risk(db, project)

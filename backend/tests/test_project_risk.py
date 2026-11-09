@@ -1,6 +1,7 @@
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET_KEY"] = "project-risk-test-signing-key"
@@ -204,8 +205,20 @@ class ProjectRiskTests(unittest.TestCase):
             self.foreign_owner_id, self.other_tenant_id, "owner"
         )
         self.viewer_headers = self._headers(self.viewer_id, self.tenant_id, "owner")
+        self.cache_patches = [
+            patch("backend.app.services.project_risk_cache.cache.get_value", return_value=None),
+            patch("backend.app.services.project_risk_cache.cache.get_json", return_value=None),
+            patch(
+                "backend.app.services.project_risk_cache.cache.set_json_if_version",
+                return_value=True,
+            ),
+        ]
+        for cache_patch in self.cache_patches:
+            cache_patch.start()
 
     def tearDown(self) -> None:
+        for cache_patch in self.cache_patches:
+            cache_patch.stop()
         app.dependency_overrides.clear()
         self.engine.dispose()
 

@@ -5,7 +5,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from backend.app.models import Project, Task, User
-from backend.app.services.project_risk import analyze_project_risk
+from backend.app.services.project_risk_cache import get_project_risk
 
 
 class AssistantAccessDenied(Exception):
@@ -142,7 +142,7 @@ def project_risk(
 ) -> dict[str, Any]:
     _authorize_tool(db, tenant_id, user_id)
     project = _tenant_project(db, tenant_id, project_id)
-    result = analyze_project_risk(db, project)
+    result = get_project_risk(db, project)
     return {
         "project_id": result["project_id"],
         "risk_score": result["risk_score"],

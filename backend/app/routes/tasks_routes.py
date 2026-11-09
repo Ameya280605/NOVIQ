@@ -15,6 +15,9 @@ from backend.app.schemas.tasks import (
     TaskStatus,
     TaskUpdate,
 )
+from backend.app.services.project_risk_jobs import (
+    refresh_project_risk_after_mutation,
+)
 from backend.app.utils.audit import create_audit_log
 from backend.app.utils.roles import require_roles
 
@@ -119,6 +122,7 @@ def create_task(
             metadata={"assigned_to": new_task.assigned_to},
         )
     db.commit()
+    refresh_project_risk_after_mutation(tenant_id, {new_task.project_id})
     db.refresh(new_task)
     return new_task
 
@@ -221,6 +225,7 @@ def update_task(
 
     old_status = task.status
     old_assignee_id = task.assigned_to
+    old_project_id = task.project_id
     new_status = update_data.get("status", old_status)
     if new_status != old_status and new_status not in _ALLOWED_STATUS_TRANSITIONS[
         old_status
@@ -282,6 +287,10 @@ def update_task(
             },
         )
     db.commit()
+    if changed_fields:
+        refresh_project_risk_after_mutation(
+            tenant_id, {old_project_id, task.project_id}
+        )
     db.refresh(task)
     return task
 
@@ -312,6 +321,9 @@ def delete_task(
         resource_type="task",
         resource_id=task.id,
     )
+    project_id = task.project_id
+    tenant_id = current_user["tenant_id"]
     db.delete(task)
     db.commit()
+    refresh_project_risk_after_mutation(tenant_id, {project_id})
     return {"message": "Task deleted successfully"}

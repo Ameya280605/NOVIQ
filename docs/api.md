@@ -1,5 +1,146 @@
 # NOVIQ API: audit logging
 
+## Redis and Celery foundation
+
+The application uses Redis for the Celery broker and result backend. Redis
+connections in the API are created lazily and closed at application shutdown.
+The test task is `backend.app.tasks.health.echo`; it returns the supplied
+message and a success status.
+
+Copy `.env.example` to `.env` and set `DATABASE_URL` and `JWT_SECRET_KEY` to
+deployment-specific values. Redis/Celery defaults are:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis client and default broker/result backend |
+| `CELERY_BROKER_URL` | `REDIS_URL` | Celery message broker |
+| `CELERY_RESULT_BACKEND` | `REDIS_URL` | Celery task results |
+
+Keep credentials in environment configuration; do not commit `.env`. Install
+Python dependencies from the repository root:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Start Redis locally with Docker:
+
+```powershell
+docker run --name noviq-redis -p 6379:6379 -d redis:7-alpine
+```
+
+In separate terminals from the repository root, start the API and worker:
+
+```powershell
+uvicorn backend.app.main:app --reload
+```
+
+```powershell
+celery -A backend.app.celery_app:celery_app worker --loglevel=INFO --pool=solo
+```
+
+`--pool=solo` is suitable for the local Windows development environment. On
+supported Unix deployments, omit that option to use Celery's default worker
+pool.
+
+Submit and inspect the test task:
+
+```powershell
+python -c "from backend.app.tasks.health import echo_task; print(echo_task.delay('phase-1-test').id)"
+celery -A backend.app.celery_app:celery_app result <task-id>
+```
+
+`GET /health/redis` pings Redis. `GET /health/worker` pings Celery workers
+through the broker. Both return `200` with `{"status":"ok"}` when healthy and
+`503` with a generic unavailable status when the dependency is unavailable.
+These checks do not expose connection URLs or exception details.
+
+Focused foundation tests (task execution tests use Celery eager mode and do
+not need a running Redis service):
+
+```powershell
+python -m unittest backend.tests.test_redis_celery -v
+```
+
+## Project risk caching
+
+Project risk responses are cached in Redis using keys containing tenant ID,
+project ID, and the risk scoring version:
+`noviq:project-risk:tenant:{tenant_id}:project:{project_id}:version:{version}`.
+The default expiration is 60 seconds and can be changed with
+`PROJECT_RISK_CACHE_TTL_SECONDS` in the environment. The value must be a
+positive integer.
+
+Project authorization and tenant-scoped lookup happen before the cache is
+accessed. Successful project and task creates, updates, and deletes invalidate
+the affected project's current-version risk key after the database transaction
+commits. Moving a task invalidates both its old and new project keys. A
+no-op task/project update does not invalidate.
+
+If Redis is unavailable or a cache entry is unreadable, risk analysis falls
+back to the PostgreSQL calculation. Cache write and invalidation failures are
+logged without request data or connection details; the underlying mutation is
+not rolled back after its database commit. Because an invalidation can fail
+during a Redis outage, a previously cached value may remain visible until its
+configured TTL expires. Keep this TTL short enough for the application's
+freshness requirements.
+
+## Background project risk processing
+
+Successful project creation/update and task creation/update/deletion queue a
+tenant-scoped recalculation after the database commit. Project deletion removes
+its cache entry but does not queue a calculation for a project that no longer
+exists. A failed or no-op mutation does not queue a job. If the broker is
+unavailable, the completed API mutation remains committed and a safe failure
+event is logged; the periodic scan can enqueue that project again.
+
+The Celery Beat schedule enqueues a check for every existing project every 15
+minutes. Run the scheduler separately from the worker and API:
+
+```powershell
+celery -A backend.app.celery_app:celery_app beat --loglevel=INFO
+```
+
+The worker can run with the Windows-compatible pool shown in the foundation
+instructions. On Windows, use separate terminals:
+
+```powershell
+celery -A backend.app.celery_app:celery_app worker --loglevel=INFO --pool=solo
+```
+
+Each recalculation fetches a project by both `project_id` and `tenant_id`
+before reading its tasks or audit history, including on every retry. Jobs retry
+transient SQLAlchemy operational errors and Redis access/write errors up to
+three times with exponential backoff (1, 2, then 4 seconds). After Redis retries
+are exhausted, the worker can still calculate from PostgreSQL and skips Redis
+cache writes. Database errors that remain after retries and unexpected
+permanent errors are logged and surfaced as failed Celery tasks; they do not
+modify project/task records. Recalculation has a 30-second soft and 45-second
+hard limit. Periodic scans retry transient database errors up to three times
+and have a 270-second soft / 300-second hard limit.
+
+Redis stores the risk cache, not the source-of-truth data. Each invalidation or
+queued job receives a version token. Cache writes use an atomic Redis
+compare-and-set against that token, so superseded jobs cannot overwrite
+newer-version results. A short-lived Redis lock prevents simultaneous
+execution, and a per-job completion marker (retained for 24 hours) makes
+completed deliveries idempotent.
+Duplicate deliveries return without recalculating when a result for the
+version already exists. If a lock remains busy with no result, a delivery is
+retried; after retries, it is deferred to the periodic scan.
+
+Risk tasks use late acknowledgement and are rejected for redelivery if a worker
+process is lost. Celery's publisher retries broker sends up to three times.
+Mutation requests commit PostgreSQL changes before attempting cache
+invalidation or task publication, so broker/worker failure does not roll back
+or lose committed business data. Publication failures emit a structured
+`project_risk_job_enqueue_failed` event; the next 15-minute scan can enqueue
+the missed calculation. There is no durable transactional outbox, so
+recalculation may be delayed until that scan. Structured task logs identify
+success, retry, duplicate, deferred, and permanent-failure events using tenant,
+project, task, and retry identifiers only; prompts, credentials, and project
+content are not logged.
+
 ## Dashboard and analytics
 
 All dashboard endpoints require a bearer JWT for a user whose current

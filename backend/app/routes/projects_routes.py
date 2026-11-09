@@ -13,6 +13,10 @@ from backend.app.schemas.projects import (
     ProjectStatus,
     ProjectUpdate,
 )
+from backend.app.services.project_risk_jobs import (
+    refresh_project_risk_after_mutation,
+)
+from backend.app.services.project_risk_cache import invalidate_project_risk
 from backend.app.utils.audit import create_audit_log
 from backend.app.utils.roles import require_roles
 
@@ -136,6 +140,7 @@ def create_project(
             metadata={"new_project_manager_id": new_project.project_manager_id},
         )
     db.commit()
+    refresh_project_risk_after_mutation(tenant_id, {new_project.id})
     db.refresh(new_project)
     return new_project
 
@@ -311,6 +316,8 @@ def update_project(
         )
 
     db.commit()
+    if changed_fields:
+        refresh_project_risk_after_mutation(tenant_id, {project.id})
     db.refresh(project)
     return project
 
@@ -345,6 +352,9 @@ def delete_project(
         resource_type="project",
         resource_id=project.id,
     )
+    project_id = project.id
+    tenant_id = current_user["tenant_id"]
     db.delete(project)
     db.commit()
+    invalidate_project_risk(tenant_id, {project_id})
     return {"message": "Project deleted successfully"}
