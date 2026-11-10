@@ -15,6 +15,7 @@ celery_app = Celery(
     include=[
         "backend.app.tasks.health",
         "backend.app.tasks.project_risk",
+        "backend.app.tasks.documents",
     ],
 )
 
@@ -41,6 +42,10 @@ celery_app.conf.update(
     beat_schedule={
         "schedule-project-risk-checks-every-15-minutes": {
             "task": "backend.app.tasks.project_risk.schedule_periodic_checks",
+            "schedule": crontab(minute="*/15"),
+        },
+        "schedule-document-cleanup-recovery-every-15-minutes": {
+            "task": "backend.app.tasks.documents.recover_pending_uploads",
             "schedule": crontab(minute="*/15"),
         },
     },

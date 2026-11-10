@@ -6,9 +6,11 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     JSON,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -37,9 +39,16 @@ class Tenant(Base):
 
     projects: Mapped[list["Project"]] = relationship(back_populates="tenant")
 
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="tenant", foreign_keys="Document.tenant_id"
+    )
+
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("uq_users_tenant_id_id", "tenant_id", "id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -72,6 +81,10 @@ class User(Base):
         foreign_keys="Project.project_manager_id",
     )
 
+    uploaded_documents: Mapped[list["Document"]] = relationship(
+        back_populates="uploader", foreign_keys="Document.uploaded_by"
+    )
+
 
 class Project(Base):
     __tablename__ = "projects"
@@ -82,6 +95,7 @@ class Project(Base):
         ),
         Index("ix_projects_tenant_status", "tenant_id", "status"),
         Index("ix_projects_tenant_manager", "tenant_id", "project_manager_id"),
+        Index("uq_projects_tenant_id_id", "tenant_id", "id", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -128,6 +142,97 @@ class Project(Base):
     project_manager: Mapped["User | None"] = relationship(
         back_populates="managed_projects",
         foreign_keys=[project_manager_id],
+    )
+
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="project",
+        foreign_keys="Document.project_id",
+        overlaps="tenant,documents",
+    )
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "project_id"],
+            ["projects.tenant_id", "projects.id"],
+            name="fk_documents_tenant_project",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "uploaded_by"],
+            ["users.tenant_id", "users.id"],
+            name="fk_documents_tenant_uploader",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "deletion_requested_by"],
+            ["users.tenant_id", "users.id"],
+            name="fk_documents_tenant_deletion_requester",
+        ),
+        CheckConstraint(
+            "status IN ('pending_upload', 'available', 'deletion_pending', 'failed', 'deleted')",
+            name="ck_documents_status",
+        ),
+        CheckConstraint("size_bytes >= 0", name="ck_documents_size_bytes"),
+        UniqueConstraint("storage_key", name="uq_documents_storage_key"),
+        Index("ix_documents_tenant_project", "tenant_id", "project_id"),
+        Index("ix_documents_tenant_status", "tenant_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False
+    )
+
+    project_id: Mapped[int] = mapped_column(nullable=False)
+
+    uploaded_by: Mapped[int] = mapped_column(nullable=False)
+
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    size_bytes: Mapped[int] = mapped_column(nullable=False)
+
+    checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    status: Mapped[str] = mapped_column(
+        String(50), default="pending_upload", nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    deletion_requested_by: Mapped[int | None] = mapped_column(nullable=True)
+
+    tenant: Mapped["Tenant"] = relationship(
+        back_populates="documents",
+        foreign_keys=[tenant_id],
+        overlaps="project,documents",
+    )
+
+    project: Mapped["Project"] = relationship(
+        back_populates="documents",
+        foreign_keys=[project_id],
+        overlaps="tenant,documents",
+    )
+
+    uploader: Mapped["User"] = relationship(
+        back_populates="uploaded_documents", foreign_keys=[uploaded_by]
     )
 
 

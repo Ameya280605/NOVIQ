@@ -1,5 +1,182 @@
 # NOVIQ API: audit logging
 
+## Document metadata foundation (Module 12, Phase 1)
+
+The database now has a tenant-scoped `documents` metadata table related to its
+tenant, project, and uploading user. It stores the original filename, storage
+key, content type, size, optional checksum, lifecycle status, and timestamps.
+Lifecycle statuses are `pending_upload`, `available`, `deletion_pending`,
+`failed`, and `deleted`. Database constraints prevent a document's tenant from
+differing from its project's tenant or its uploader's tenant.
+
+`DocumentMetadata` is the response metadata schema and intentionally omits the
+internal storage key. Document access helpers scope project and document
+lookups by tenant; API routes must obtain role-verified user data through the
+existing `require_roles` dependency before calling these helpers. The current
+role conventions allow all authenticated project roles to read, owner/admin/
+manager to manage, and owner/admin to delete.
+
+No document endpoints are added in this phase. Apply the schema with
+`alembic upgrade head`.
+
+### Private S3 storage foundation (Phase 2)
+
+The isolated storage service is `backend.app.services.s3_storage.S3Storage`.
+It creates short-lived presigned PUT/GET URLs, returns selected object metadata
+from `HeadObject`, and deletes objects. Uploads use server-generated opaque
+keys, do not set an ACL, and request SSE-S3 (`AES256`) by default. When a KMS
+key is configured, uploads request SSE-KMS and return the corresponding
+required upload headers. Storage errors are logged without URLs, keys, or AWS
+error details and surfaced as a generic service error. Missing required
+configuration fails explicitly.
+
+Configure these values in the environment (for local development, `.env`):
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `AWS_REGION` | Yes | AWS region (also accepts the standard `AWS_DEFAULT_REGION`) |
+| `AWS_S3_BUCKET` | Yes | Existing private bucket name |
+| `AWS_S3_ENDPOINT_URL` | No | S3-compatible endpoint, for example local development |
+| `AWS_S3_KMS_KEY_ID` | No | KMS key ID/ARN/alias; enables SSE-KMS for uploads |
+| `S3_PRESIGNED_URL_TTL_SECONDS` | No | URL lifetime, 1–900 seconds; defaults to 300 |
+| `DOCUMENT_MAX_SIZE_BYTES` | No | Maximum accepted upload size; defaults to 25 MiB |
+
+Install dependencies with `python -m pip install -r requirements.txt`.
+Credentials are not configured in application settings: boto3 uses its standard
+credential provider chain (environment, shared config/profile, container
+credentials, or instance/workload role). Prefer a deployment role and least
+privilege over static credentials. The application does not create buckets.
+Before use, configure the bucket with Block Public Access enabled, object
+ownership enforced, TLS-only access, and default encryption. If using KMS, the
+runtime role needs the relevant KMS permissions as well as bucket access.
+
+Phase 2 does not create endpoints, upload files, or invoke S3. Callers must
+authorize the current tenant/project/document before creating a presigned
+download URL; a presigned URL is a bearer credential and must not be logged or
+persisted. The upload response includes the exact content-type and encryption
+headers that the client must send with the PUT request.
+
+### Document upload and retrieval API (Phase 3)
+
+All document paths are nested under `/projects/{project_id}/documents`.
+The tenant is taken from the authenticated user after the existing
+database-backed role check; tenant IDs and S3 keys are never accepted from the
+client. Cross-tenant projects/documents return `404`.
+
+| Method and path | Access | Purpose |
+| --- | --- | --- |
+| `POST /projects/{project_id}/documents` | owner/admin/manager | Validate metadata, create a `pending_upload` record, and return a presigned PUT URL. |
+| `POST /projects/{project_id}/documents/{document_id}/complete` | owner/admin/manager | Verify the private S3 object size and content type, mark it `available`, and audit completion. No request body. |
+| `GET /projects/{project_id}/documents` | owner/admin/manager/member | List non-deleted document metadata, sorted newest first. |
+| `GET /projects/{project_id}/documents/{document_id}` | owner/admin/manager/member | Get tenant-scoped metadata. |
+| `POST /projects/{project_id}/documents/{document_id}/download-url` | owner/admin/manager/member | Verify an available object exists and return a short-lived presigned GET URL. |
+| `DELETE /projects/{project_id}/documents/{document_id}` | owner/admin | Soft-delete metadata and queue asynchronous private-object cleanup. |
+
+Initiation request:
+
+```json
+{
+  "original_filename": "project-plan.pdf",
+  "content_type": "application/pdf",
+  "size_bytes": 2048
+}
+```
+
+Allowed content types are PDF, plain text, JPEG, PNG, and OpenXML Word,
+Spreadsheet, and Presentation formats. Filenames must be plain basenames with
+no path separators/control characters. Size must be positive and no greater
+than `DOCUMENT_MAX_SIZE_BYTES` (default 25 MiB). Unknown request fields are
+rejected.
+
+Initiation response:
+
+```json
+{
+  "document": {
+    "id": 17,
+    "project_id": 4,
+    "uploaded_by": 8,
+    "original_filename": "project-plan.pdf",
+    "content_type": "application/pdf",
+    "size_bytes": 2048,
+    "checksum": null,
+    "status": "pending_upload",
+    "created_at": "2026-11-09T12:00:00Z",
+    "updated_at": "2026-11-09T12:00:00Z",
+    "deleted_at": null
+  },
+  "upload_url": "<short-lived presigned URL>",
+  "headers": {
+    "Content-Type": "application/pdf",
+    "x-amz-server-side-encryption": "AES256"
+  },
+  "expires_in": 300
+}
+```
+
+The client must PUT the bytes directly to `upload_url`, sending the returned
+headers. Then call the bodyless completion endpoint. Missing objects and
+content-type/size mismatches return `409` and leave the record pending; an S3
+or database outage returns a generic `503` without recording a success event.
+Repeating completion for an already available record returns its metadata
+without another S3 operation or audit event.
+
+List responses contain `items`, `page`, `page_size`, `total`, and
+`total_pages`; query defaults are `page=1` and `page_size=50` (maximum 100).
+Metadata responses intentionally omit the storage key.
+
+Download URL responses have the shape:
+
+```json
+{
+  "download_url": "<short-lived presigned URL>",
+  "expires_in": 300
+}
+```
+
+Only available documents can be downloaded. Presigned URLs are returned only
+after authorization and existence checks; treat them as bearer credentials.
+Successful initiation, completion, listing, metadata access, and download URL
+creation produce audit events. Audit metadata contains safe document/project
+identifiers, status, content type, and size only; it excludes filenames,
+storage keys, URLs, credentials, and file contents.
+
+### Document deletion and cleanup reliability (Phase 4)
+
+`DELETE /projects/{project_id}/documents/{document_id}` soft-deletes the
+document immediately by setting `deleted_at` and `deletion_pending` in one
+database transaction with the `document_deletion_requested` audit event.
+Deleted/pending records are excluded from normal listing and retrieval. The
+route returns `202 Accepted` with the document ID, current cleanup status, and
+whether the cleanup job was queued. Repeated deletion requests are
+idempotent: they do not create duplicate audits or enqueue duplicate work.
+
+After commit, a tenant/document-scoped Celery job deletes the S3 object. Only
+after S3 confirms deletion does it transition the record to `deleted` and write
+`document_deleted`. Retries repeat the idempotent S3 delete; a database failure
+after storage deletion is safe to retry. Transient S3 and database operational
+failures retry up to five times with exponential delays capped at 300 seconds.
+Permanent S3 errors fail the Celery delivery but leave the database state
+`deletion_pending`, never falsely reporting physical cleanup completion.
+
+Celery Beat runs document cleanup recovery every 15 minutes. It re-enqueues
+stale `deletion_pending` work and marks/cleans abandoned `pending_upload`
+records after `DOCUMENT_PENDING_UPLOAD_TTL_SECONDS` (default 24 hours).
+`DOCUMENT_CLEANUP_RECOVERY_GRACE_SECONDS` (default 900 seconds) prevents a
+recovery scan from immediately duplicating recently started cleanup. If the
+broker is unavailable after the database commit, the soft deletion remains
+committed and the periodic recovery scan queues the cleanup later.
+
+Run the scheduler alongside the worker using the existing Celery commands:
+
+```powershell
+celery -A backend.app.celery_app:celery_app beat --loglevel=INFO
+celery -A backend.app.celery_app:celery_app worker --loglevel=INFO --pool=solo
+```
+
+Cleanup logs contain tenant/document/task identifiers and error classes only;
+they never include storage keys, presigned URLs, file data, or AWS credentials.
+
 ## Redis and Celery foundation
 
 The application uses Redis for the Celery broker and result backend. Redis

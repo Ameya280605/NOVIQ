@@ -24,6 +24,11 @@ _ALLOWED_METADATA_KEYS = {
     "project_manager_id",
     "old_project_manager_id",
     "new_project_manager_id",
+    "document_id",
+    "content_type",
+    "size_bytes",
+    "document_status",
+    "count",
 }
 
 
