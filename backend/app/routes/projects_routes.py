@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
+from backend.app.events import ProjectStatusChanged
 from backend.app.models import Project, Task, User
+from backend.app.outbox import store_event
 from backend.app.schemas.projects import (
     ProjectCreate,
     ProjectListResponse,
@@ -300,6 +302,16 @@ def update_project(
             resource_type="project",
             resource_id=project.id,
             metadata={"old_status": old_status, "new_status": project.status},
+        )
+        store_event(
+            db,
+            ProjectStatusChanged(
+                tenant_id=tenant_id,
+                project_id=project.id,
+                previous_status=old_status,
+                new_status=project.status,
+                changed_by=actor_id,
+            ),
         )
     if project.project_manager_id != old_manager_id:
         create_audit_log(

@@ -16,6 +16,7 @@ celery_app = Celery(
         "backend.app.tasks.health",
         "backend.app.tasks.project_risk",
         "backend.app.tasks.documents",
+        "backend.app.tasks.outbox",
     ],
 )
 
@@ -47,6 +48,10 @@ celery_app.conf.update(
         "schedule-document-cleanup-recovery-every-15-minutes": {
             "task": "backend.app.tasks.documents.recover_pending_uploads",
             "schedule": crontab(minute="*/15"),
+        },
+        "schedule-outbox-event-processing-every-minute": {
+            "task": "backend.app.tasks.outbox.process_pending_events",
+            "schedule": crontab(minute="*"),
         },
     },
 )

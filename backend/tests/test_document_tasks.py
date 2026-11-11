@@ -3,24 +3,34 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-os.environ["DATABASE_URL"] = "sqlite://"
-os.environ["JWT_SECRET_KEY"] = "document-task-test-signing-key"
-os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
-os.environ["CELERY_BROKER_URL"] = "memory://"
-os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+_IMPORT_ENV = {
+    "DATABASE_URL": "sqlite://",
+    "JWT_SECRET_KEY": "document-task-test-signing-key",
+}
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+with patch.dict(os.environ, _IMPORT_ENV):
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
 
-from backend.app.celery_app import celery_app
-from backend.app.models import AuditLog, Base, Document, Project, Tenant, User
-from backend.app.services.s3_storage import StorageServiceError
-from backend.app.tasks import documents as document_tasks
+    from backend.app.celery_app import celery_app
+    from backend.app.models import AuditLog, Base, Document, Project, Tenant, User
+    from backend.app.services.s3_storage import StorageServiceError
+    from backend.app.tasks import documents as document_tasks
 
 
 class DocumentCleanupTaskTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                **_IMPORT_ENV,
+                "REDIS_URL": "redis://127.0.0.1:1/0",
+                "CELERY_BROKER_URL": "memory://",
+                "CELERY_RESULT_BACKEND": "cache+memory://",
+            },
+        )
+        self.env_patch.start()
         self.engine = create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
@@ -97,6 +107,7 @@ class DocumentCleanupTaskTests(unittest.TestCase):
             task_eager_propagates=self.eager_settings[1],
         )
         self.session_patch.stop()
+        self.env_patch.stop()
         self.engine.dispose()
 
     @staticmethod

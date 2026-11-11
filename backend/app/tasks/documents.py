@@ -8,7 +8,9 @@ from sqlalchemy.exc import OperationalError
 
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
+from backend.app.events import DocumentDeleted
 from backend.app.models import Document
+from backend.app.outbox import store_event
 from backend.app.services.document_jobs import enqueue_document_cleanup
 from backend.app.services.s3_storage import StorageServiceError, s3_storage
 from backend.app.utils.audit import create_audit_log
@@ -188,6 +190,15 @@ def cleanup_document_object(
                         "document_id": document_id,
                         "document_status": "deleted",
                     },
+                )
+                store_event(
+                    db,
+                    DocumentDeleted(
+                        tenant_id=tenant_id,
+                        document_id=document_id,
+                        project_id=document.project_id,
+                        deleted_by=actor_id,
+                    ),
                 )
             db.commit()
 

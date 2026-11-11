@@ -1,4 +1,93 @@
-# NOVIQ API: audit logging
+# NOVIQ API and background processing
+
+## Notifications
+
+Authenticated users can access only notifications addressed to their own user
+ID within their authenticated tenant. Notifications are created from
+successfully processed domain events; currently `TaskAssigned` creates a
+notification for the event's `assigned_to` user. Other domain events do not
+yet identify a recipient and therefore do not create notifications.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /notifications` | List the current user's notifications, newest first. Supports `page` (default 1) and `page_size` (default 50, maximum 100). |
+| `GET /notifications/unread-count` | Return the current user's unread notification count. |
+| `PATCH /notifications/{id}/read` | Mark one owned notification as read. |
+| `PATCH /notifications/read-all` | Mark all current-user notifications as read. |
+
+List responses contain `items`, `page`, `page_size`, `total`, and
+`total_pages`. Notification responses include event type, title, message,
+entity reference, read status, and creation time; event payloads are never
+returned.
+
+## Module 13: domain events and notifications
+
+### Supported domain events
+
+The internal event publisher supports these typed events:
+
+| Event | Emitted by | Payload identifiers |
+| --- | --- | --- |
+| `TaskAssigned` | Task creation and assignment changes | Tenant, task, assignee, actor |
+| `TaskStatusChanged` | Task status changes | Tenant, task, previous/new status, actor |
+| `ProjectStatusChanged` | Project status changes | Tenant, project, previous/new status, actor |
+| `DocumentUploaded` | Successful document upload completion | Tenant, document, project, uploader |
+| `DocumentDeleted` | Successful physical document cleanup | Tenant, document, project, actor |
+
+Each event is serialized into an `outbox_events` row in the same SQLAlchemy
+transaction as the business mutation. A transaction rollback removes both the
+business change and its event. Event payload tenant IDs must match the outbox
+row tenant ID.
+
+### Outbox lifecycle
+
+Outbox rows use these states:
+
+`pending` -> `processing` -> `processed`
+
+Handler or deserialization failures return a row to `pending` with incremented
+`retry_count` and safe `error_details`. After three attempts, the row becomes
+`failed`. A worker crash leaves a `processing` row with `claimed_at`; claims
+older than five minutes are recovered by the polling task. Recovery increments
+the retry count, returns the row to `pending`, or marks it `failed` when the
+limit is reached. A row at the retry limit cannot remain permanently
+`processing`.
+
+PostgreSQL workers claim rows with `FOR UPDATE SKIP LOCKED`, so concurrent
+workers do not claim the same pending row. Processing is idempotent: processed
+rows are ignored, and TaskAssigned notification creation is deduplicated by
+`source_event_id` and recipient. Handler database writes are rolled back before
+retry state is committed. Failure logs include event ID, tenant ID, event type,
+retry count, status, and exception class only; payloads, credentials, URLs, and
+other sensitive data are not logged.
+
+### Celery worker and Beat
+
+The outbox task is registered as
+`backend.app.tasks.outbox.process_pending_events`. It polls up to 50 events
+per invocation and is scheduled by Beat every minute. Start both processes
+separately:
+
+```powershell
+celery -A backend.app.celery_app:celery_app beat --loglevel=INFO
+celery -A backend.app.celery_app:celery_app worker --loglevel=INFO --pool=solo
+```
+
+The worker uses late acknowledgements and rejects tasks when a worker is lost.
+The task has a 30-second soft and 45-second hard limit. Temporary database
+polling failures retry up to three times. If Redis or the broker is unavailable,
+the committed business transaction and outbox row remain durable; the next
+successful Beat poll can process the pending row. The outbox is the source of
+truth, not Redis.
+
+### Notification delivery limitation
+
+Only `TaskAssigned` currently creates a notification, addressed to the
+event's explicit `assigned_to` user after tenant validation. The other four
+events contain actor or uploader IDs but do not identify an intended
+notification recipient, so their handlers record successful processing without
+creating notifications. Recipients must not be inferred from tenant membership,
+project managers, actors, or arbitrary users.
 
 ## Document metadata foundation (Module 12, Phase 1)
 
@@ -193,6 +282,12 @@ deployment-specific values. Redis/Celery defaults are:
 | `CELERY_BROKER_URL` | `REDIS_URL` | Celery message broker |
 | `CELERY_RESULT_BACKEND` | `REDIS_URL` | Celery task results |
 
+Module 13 uses no additional broker or event-stream service. The following
+database/outbox settings are currently code constants: three processing
+attempts, five-minute stale-claim recovery, and a 50-event polling batch.
+Document cleanup has separate settings for pending-upload TTL and recovery
+grace, documented above.
+
 Keep credentials in environment configuration; do not commit `.env`. Install
 Python dependencies from the repository root:
 
@@ -237,6 +332,16 @@ not need a running Redis service):
 
 ```powershell
 python -m unittest backend.tests.test_redis_celery -v
+```
+
+Validate the full backend and migration state from the repository root:
+
+```powershell
+python -m pytest backend/tests -q
+python -m compileall -q backend alembic
+alembic heads
+alembic upgrade head --sql
+git diff --check
 ```
 
 ## Project risk caching

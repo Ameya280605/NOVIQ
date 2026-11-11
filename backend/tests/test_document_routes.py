@@ -2,33 +2,43 @@ import os
 import unittest
 from unittest.mock import patch
 
-os.environ["DATABASE_URL"] = "sqlite://"
-os.environ["JWT_SECRET_KEY"] = "document-api-test-signing-key"
-os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
-os.environ["CELERY_BROKER_URL"] = "memory://"
-os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+_IMPORT_ENV = {
+    "DATABASE_URL": "sqlite://",
+    "JWT_SECRET_KEY": "document-api-test-signing-key",
+}
 
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+with patch.dict(os.environ, _IMPORT_ENV):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
 
-from backend.app.database import get_db
-from backend.app.main import app
-from backend.app.models import AuditLog, Base, Document, Project, Tenant, User
-from backend.app.services.s3_storage import (
-    ObjectMetadataMismatchError,
-    ObjectNotFoundError,
-    StorageConfigurationError,
-    StorageServiceError,
-    StoredObjectMetadata,
-)
-from backend.app.utils.jwt import create_access_token
+    from backend.app.database import get_db
+    from backend.app.main import app
+    from backend.app.models import AuditLog, Base, Document, Project, Tenant, User
+    from backend.app.services.s3_storage import (
+        ObjectMetadataMismatchError,
+        ObjectNotFoundError,
+        StorageConfigurationError,
+        StorageServiceError,
+        StoredObjectMetadata,
+    )
+    from backend.app.utils.jwt import create_access_token
 
 
 class DocumentRoutesTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                **_IMPORT_ENV,
+                "REDIS_URL": "redis://127.0.0.1:1/0",
+                "CELERY_BROKER_URL": "memory://",
+                "CELERY_RESULT_BACKEND": "cache+memory://",
+            },
+        )
+        self.env_patch.start()
         self.upload_key_counter = 0
         self.engine = create_engine(
             "sqlite://",
@@ -103,6 +113,7 @@ class DocumentRoutesTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
+        self.env_patch.stop()
         self.engine.dispose()
 
     @staticmethod

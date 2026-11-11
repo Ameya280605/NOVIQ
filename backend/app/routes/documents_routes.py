@@ -10,7 +10,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
+from backend.app.events import DocumentUploaded
 from backend.app.models import Document, Project
+from backend.app.outbox import store_event
 from backend.app.schemas.documents import (
     DocumentDownloadResponse,
     DocumentDeletionResponse,
@@ -253,6 +255,15 @@ def complete_document_upload(
             user_id,
             "document_upload_completed",
             document,
+        )
+        store_event(
+            db,
+            DocumentUploaded(
+                tenant_id=tenant_id,
+                document_id=document.id,
+                project_id=document.project_id,
+                uploaded_by=user_id,
+            ),
         )
         db.commit()
         db.refresh(document)

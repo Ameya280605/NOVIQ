@@ -43,6 +43,14 @@ class Tenant(Base):
         back_populates="tenant", foreign_keys="Document.tenant_id"
     )
 
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="tenant", foreign_keys="Notification.tenant_id"
+    )
+
+    outbox_events: Mapped[list["OutboxEvent"]] = relationship(
+        back_populates="tenant"
+    )
+
 
 class User(Base):
     __tablename__ = "users"
@@ -83,6 +91,10 @@ class User(Base):
 
     uploaded_documents: Mapped[list["Document"]] = relationship(
         back_populates="uploader", foreign_keys="Document.uploaded_by"
+    )
+
+    received_notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="recipient", foreign_keys="Notification.recipient_id"
     )
 
 
@@ -339,3 +351,154 @@ class AuditLog(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
     )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "recipient_id"],
+            ["users.tenant_id", "users.id"],
+            name="fk_notifications_tenant_recipient",
+        ),
+        ForeignKeyConstraint(
+            ["source_event_id"],
+            ["outbox_events.id"],
+            name="fk_notifications_source_event",
+        ),
+        UniqueConstraint(
+            "source_event_id",
+            "recipient_id",
+            name="uq_notifications_source_event_recipient",
+        ),
+        Index(
+            "ix_notifications_tenant_recipient_read_created",
+            "tenant_id",
+            "recipient_id",
+            "is_read",
+            "created_at",
+        ),
+        Index(
+            "ix_notifications_tenant_created_at",
+            "tenant_id",
+            "created_at",
+        ),
+        Index(
+            "ix_notifications_tenant_event_type",
+            "tenant_id",
+            "event_type",
+        ),
+        Index(
+            "ix_notifications_tenant_entity",
+            "tenant_id",
+            "entity_type",
+            "entity_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False
+    )
+
+    recipient_id: Mapped[int] = mapped_column(nullable=False)
+
+    source_event_id: Mapped[int | None] = mapped_column(nullable=True)
+
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    message: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+    entity_type: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+
+    entity_id: Mapped[int | None] = mapped_column(nullable=True)
+
+    is_read: Mapped[bool] = mapped_column(
+        default=False, nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    tenant: Mapped["Tenant"] = relationship(
+        back_populates="notifications", foreign_keys=[tenant_id]
+    )
+
+    recipient: Mapped["User"] = relationship(
+        back_populates="received_notifications",
+        foreign_keys=[recipient_id],
+    )
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'processed', 'failed')",
+            name="ck_outbox_events_status",
+        ),
+        CheckConstraint(
+            "retry_count >= 0",
+            name="ck_outbox_events_retry_count",
+        ),
+        Index(
+            "ix_outbox_events_tenant_status_created",
+            "tenant_id",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "ix_outbox_events_status_created",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "ix_outbox_events_tenant_event_type",
+            "tenant_id",
+            "event_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False
+    )
+
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    event_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending", nullable=False
+    )
+
+    retry_count: Mapped[int] = mapped_column(default=0, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    error_details: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True
+    )
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="outbox_events")

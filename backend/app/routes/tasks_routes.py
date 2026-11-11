@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
+from backend.app.events import TaskAssigned, TaskStatusChanged
 from backend.app.models import Project, Task, User
+from backend.app.outbox import store_event
 from backend.app.schemas.tasks import (
     TaskCreate,
     TaskListResponse,
@@ -120,6 +122,15 @@ def create_task(
             resource_type="task",
             resource_id=new_task.id,
             metadata={"assigned_to": new_task.assigned_to},
+        )
+        store_event(
+            db,
+            TaskAssigned(
+                tenant_id=tenant_id,
+                task_id=new_task.id,
+                assigned_to=new_task.assigned_to,
+                assigned_by=actor_id,
+            ),
         )
     db.commit()
     refresh_project_risk_after_mutation(tenant_id, {new_task.project_id})
@@ -273,6 +284,16 @@ def update_task(
             resource_id=task.id,
             metadata={"old_status": old_status, "new_status": task.status},
         )
+        store_event(
+            db,
+            TaskStatusChanged(
+                tenant_id=tenant_id,
+                task_id=task.id,
+                previous_status=old_status,
+                new_status=task.status,
+                changed_by=actor_id,
+            ),
+        )
     if task.assigned_to != old_assignee_id:
         create_audit_log(
             db=db,
@@ -286,6 +307,16 @@ def update_task(
                 "new_assigned_to": task.assigned_to,
             },
         )
+        if task.assigned_to is not None:
+            store_event(
+                db,
+                TaskAssigned(
+                    tenant_id=tenant_id,
+                    task_id=task.id,
+                    assigned_to=task.assigned_to,
+                    assigned_by=actor_id,
+                ),
+            )
     db.commit()
     if changed_fields:
         refresh_project_risk_after_mutation(
