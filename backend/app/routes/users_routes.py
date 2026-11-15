@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
-from backend.app.models import User, Tenant
+from backend.app.models import Plan, Subscription, Tenant, User
 from backend.app.schemas.users import (
     UserCreate,
     UserResponse,
@@ -29,6 +31,28 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
     db.add(new_tenant)
     db.flush()
+
+    free_plan = (
+        db.query(Plan)
+        .filter(Plan.code == "free", Plan.is_active.is_(True))
+        .one_or_none()
+    )
+    if free_plan is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Free plan is not configured",
+        )
+
+    period_start = datetime.now(timezone.utc)
+    db.add(
+        Subscription(
+            tenant_id=new_tenant.id,
+            plan_id=free_plan.id,
+            status="active",
+            current_period_start=period_start,
+            current_period_end=period_start + timedelta(days=30),
+        )
+    )
 
     new_user = User(
         tenant_id=new_tenant.id,

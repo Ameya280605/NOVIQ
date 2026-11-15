@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import AuditLog, Base, Project, Tenant, User
+from backend.app.models import AuditLog, Base, Plan, Project, Tenant, User
 from backend.app.utils.jwt import create_access_token
 from backend.app.utils.audit import create_audit_log
 
@@ -28,6 +28,7 @@ class AuditLogApiTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.session_factory = sessionmaker(bind=self.engine)
         with self.session_factory() as db:
+            db.add(Plan(code="free", name="Free"))
             tenant = Tenant(name="Tenant One")
             other_tenant = Tenant(name="Tenant Two")
             db.add_all([tenant, other_tenant])

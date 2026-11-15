@@ -19,6 +19,215 @@ class Base(DeclarativeBase):
     pass
 
 
+class Plan(Base):
+    __tablename__ = "plans"
+    __table_args__ = (
+        CheckConstraint(
+            "max_users IS NULL OR max_users >= 0",
+            name="ck_plans_max_users",
+        ),
+        CheckConstraint(
+            "max_projects IS NULL OR max_projects >= 0",
+            name="ck_plans_max_projects",
+        ),
+        CheckConstraint(
+            "max_tasks IS NULL OR max_tasks >= 0",
+            name="ck_plans_max_tasks",
+        ),
+        CheckConstraint(
+            "max_documents IS NULL OR max_documents >= 0",
+            name="ck_plans_max_documents",
+        ),
+        CheckConstraint(
+            "max_storage_bytes IS NULL OR max_storage_bytes >= 0",
+            name="ck_plans_max_storage_bytes",
+        ),
+        CheckConstraint(
+            "monthly_price_minor IS NULL OR monthly_price_minor >= 0",
+            name="ck_plans_monthly_price_minor",
+        ),
+        CheckConstraint(
+            "annual_price_minor IS NULL OR annual_price_minor >= 0",
+            name="ck_plans_annual_price_minor",
+        ),
+        UniqueConstraint("code", name="uq_plans_code"),
+        Index("ix_plans_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
+    max_users: Mapped[int | None] = mapped_column(nullable=True)
+
+    max_projects: Mapped[int | None] = mapped_column(nullable=True)
+
+    max_tasks: Mapped[int | None] = mapped_column(nullable=True)
+
+    max_documents: Mapped[int | None] = mapped_column(nullable=True)
+
+    max_storage_bytes: Mapped[int | None] = mapped_column(nullable=True)
+
+    monthly_price_minor: Mapped[int | None] = mapped_column(nullable=True)
+
+    annual_price_minor: Mapped[int | None] = mapped_column(nullable=True)
+
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    entitlements: Mapped[list["PlanEntitlement"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan"
+    )
+
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="plan"
+    )
+
+
+class PlanEntitlement(Base):
+    __tablename__ = "plan_entitlements"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_id",
+            "feature_key",
+            name="uq_plan_entitlements_plan_feature",
+        ),
+        Index(
+            "ix_plan_entitlements_plan_feature",
+            "plan_id",
+            "feature_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("plans.id"), nullable=False
+    )
+
+    feature_key: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    plan: Mapped["Plan"] = relationship(back_populates="entitlements")
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('trialing', 'active', 'past_due', 'paused', "
+            "'canceled', 'incomplete', 'unpaid')",
+            name="ck_subscriptions_status",
+        ),
+        CheckConstraint(
+            "current_period_end > current_period_start",
+            name="ck_subscriptions_period_dates",
+        ),
+        CheckConstraint(
+            "canceled_at IS NULL OR status = 'canceled'",
+            name="ck_subscriptions_canceled_at",
+        ),
+        UniqueConstraint("tenant_id", name="uq_subscriptions_tenant_id"),
+        UniqueConstraint(
+            "provider_subscription_id",
+            name="uq_subscriptions_provider_subscription_id",
+        ),
+        Index(
+            "ix_subscriptions_tenant_status",
+            "tenant_id",
+            "status",
+        ),
+        Index(
+            "ix_subscriptions_status_period_end",
+            "status",
+            "current_period_end",
+        ),
+        Index(
+            "ix_subscriptions_provider_subscription",
+            "provider",
+            "provider_subscription_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False
+    )
+
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("plans.id"), nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32), default="active", nullable=False
+    )
+
+    current_period_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    current_period_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    trial_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        default=False, nullable=False
+    )
+
+    canceled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    provider_customer_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+
+    provider_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    tenant: Mapped["Tenant"] = relationship(back_populates="subscription")
+
+    plan: Mapped["Plan"] = relationship(back_populates="subscriptions")
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
@@ -49,6 +258,10 @@ class Tenant(Base):
 
     outbox_events: Mapped[list["OutboxEvent"]] = relationship(
         back_populates="tenant"
+    )
+
+    subscription: Mapped["Subscription | None"] = relationship(
+        back_populates="tenant", uselist=False
     )
 
 
