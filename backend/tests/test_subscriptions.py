@@ -194,6 +194,14 @@ class SubscriptionTests(unittest.TestCase):
         )
         self.assertEqual(canceled.status_code, 200, canceled.text)
         self.assertTrue(canceled.json()["subscription"]["cancel_at_period_end"])
+        repeated_cancel = self.client.post(
+            "/subscription/cancel", headers=owner_headers
+        )
+        self.assertEqual(repeated_cancel.status_code, 200)
+        self.assertEqual(
+            repeated_cancel.json()["subscription"]["id"],
+            canceled.json()["subscription"]["id"],
+        )
 
     def test_subscription_rejects_tampered_tenant_claim_and_reports_missing_subscription(
         self,
@@ -209,6 +217,99 @@ class SubscriptionTests(unittest.TestCase):
 
         tampered = self.client.get("/subscription", headers=tampered_headers)
         self.assertEqual(tampered.status_code, 401)
+
+    def test_activation_is_tenant_scoped_and_idempotent(self) -> None:
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Activation Tenant", "owner")
+            db.commit()
+            headers = self._headers(owner.id, tenant.id, "owner")
+
+        first = self.client.post(
+            "/subscription/activate",
+            headers=headers,
+            json={"plan_code": "starter"},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        first_payload = first.json()
+        self.assertEqual(first_payload["status"], "active")
+        self.assertEqual(first_payload["plan"]["code"], "starter")
+
+        duplicate = self.client.post(
+            "/subscription/activate",
+            headers=headers,
+            json={"plan_code": "starter"},
+        )
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        self.assertEqual(duplicate.json()["id"], first_payload["id"])
+        self.assertEqual(
+            duplicate.json()["current_period_end"],
+            first_payload["current_period_end"],
+        )
+
+    def test_renewal_reactivates_expired_subscription_and_is_idempotent(self):
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Renewal Tenant", "owner")
+            plan = db.query(Plan).filter(Plan.code == "free").one()
+            start = datetime.now(timezone.utc) - timedelta(days=60)
+            subscription = Subscription(
+                tenant_id=tenant.id,
+                plan_id=plan.id,
+                status="canceled",
+                current_period_start=start,
+                current_period_end=start + timedelta(days=30),
+                canceled_at=start + timedelta(days=30),
+            )
+            db.add(subscription)
+            db.commit()
+            headers = self._headers(owner.id, tenant.id, "owner")
+
+        first = self.client.post("/subscription/renew", headers=headers)
+        self.assertEqual(first.status_code, 200, first.text)
+        first_payload = first.json()
+        self.assertEqual(first_payload["status"], "active")
+        self.assertFalse(first_payload["cancel_at_period_end"])
+
+        duplicate = self.client.post("/subscription/renew", headers=headers)
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        self.assertEqual(
+            duplicate.json()["current_period_end"],
+            first_payload["current_period_end"],
+        )
+
+    def test_renewal_reverses_pending_cancellation_without_extending_period(self):
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Cancellation Tenant", "owner")
+            plan = db.query(Plan).filter(Plan.code == "free").one()
+            start = datetime.now(timezone.utc)
+            period_end = start + timedelta(days=30)
+            subscription = Subscription(
+                tenant_id=tenant.id,
+                plan_id=plan.id,
+                status="active",
+                current_period_start=start,
+                current_period_end=period_end,
+                cancel_at_period_end=True,
+            )
+            db.add(subscription)
+            db.commit()
+            headers = self._headers(owner.id, tenant.id, "owner")
+
+        canceled = self.client.post("/subscription/cancel", headers=headers)
+        self.assertEqual(canceled.status_code, 200, canceled.text)
+        original_period_end = canceled.json()["subscription"]["current_period_end"]
+
+        renewed = self.client.post("/subscription/renew", headers=headers)
+        self.assertEqual(renewed.status_code, 200, renewed.text)
+        self.assertFalse(renewed.json()["cancel_at_period_end"])
+        self.assertEqual(renewed.json()["current_period_end"], original_period_end)
+
+        repeated = self.client.post("/subscription/renew", headers=headers)
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertFalse(repeated.json()["cancel_at_period_end"])
+        self.assertEqual(
+            repeated.json()["current_period_end"],
+            original_period_end,
+        )
 
     def test_registration_creates_tenant_scoped_free_subscription(self) -> None:
         response = self.client.post(

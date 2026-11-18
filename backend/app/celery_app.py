@@ -17,6 +17,7 @@ celery_app = Celery(
         "backend.app.tasks.project_risk",
         "backend.app.tasks.documents",
         "backend.app.tasks.outbox",
+        "backend.app.tasks.subscriptions",
     ],
 )
 
@@ -51,6 +52,10 @@ celery_app.conf.update(
         },
         "schedule-outbox-event-processing-every-minute": {
             "task": "backend.app.tasks.outbox.process_pending_events",
+            "schedule": crontab(minute="*"),
+        },
+        "schedule-subscription-expiry-every-minute": {
+            "task": "backend.app.tasks.subscriptions.expire_subscriptions",
             "schedule": crontab(minute="*"),
         },
     },

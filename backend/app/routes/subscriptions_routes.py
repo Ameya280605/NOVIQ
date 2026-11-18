@@ -5,12 +5,19 @@ from backend.app.database import get_db
 from backend.app.models import Plan, Subscription
 from backend.app.schemas.subscriptions import (
     PlanResponse,
+    SubscriptionActivationRequest,
     SubscriptionCancelResponse,
     SubscriptionPlanUpdate,
     SubscriptionResponse,
     SubscriptionUsageResponse,
 )
 from backend.app.services.usage import get_tenant_usage
+from backend.app.services.subscriptions import (
+    activate_subscription,
+    cancel_subscription as cancel_subscription_lifecycle,
+    change_subscription_plan,
+    renew_subscription,
+)
 from backend.app.utils.roles import require_roles
 
 router = APIRouter(tags=["Subscriptions"])
@@ -65,35 +72,26 @@ def get_subscription_usage(
     return get_tenant_usage(db, int(current_user["tenant_id"]))
 
 
+@router.post("/subscription/activate", response_model=SubscriptionResponse)
+def activate_tenant_subscription(
+    activation: SubscriptionActivationRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(*_MANAGEMENT_ROLES)),
+):
+    return activate_subscription(
+        db, int(current_user["tenant_id"]), activation.plan_code
+    )
+
+
 @router.patch("/subscription", response_model=SubscriptionResponse)
-def change_subscription_plan(
+def update_subscription_plan(
     update: SubscriptionPlanUpdate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_roles(*_MANAGEMENT_ROLES)),
 ):
-    subscription = _get_tenant_subscription(db, int(current_user["tenant_id"]))
-    if subscription.status == "canceled":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Canceled subscriptions cannot change plans",
-        )
-
-    plan = (
-        db.query(Plan)
-        .filter(Plan.code == update.plan_code, Plan.is_active.is_(True))
-        .one_or_none()
+    return change_subscription_plan(
+        db, int(current_user["tenant_id"]), update.plan_code
     )
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or inactive plan",
-        )
-
-    subscription.plan_id = plan.id
-    subscription.cancel_at_period_end = False
-    db.commit()
-    db.refresh(subscription)
-    return subscription
 
 
 @router.post(
@@ -104,9 +102,16 @@ def cancel_subscription(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_roles(*_MANAGEMENT_ROLES)),
 ):
-    subscription = _get_tenant_subscription(db, int(current_user["tenant_id"]))
-    if subscription.status != "canceled":
-        subscription.cancel_at_period_end = True
-        db.commit()
-        db.refresh(subscription)
-    return {"subscription": subscription}
+    return {
+        "subscription": cancel_subscription_lifecycle(
+            db, int(current_user["tenant_id"])
+        )
+    }
+
+
+@router.post("/subscription/renew", response_model=SubscriptionResponse)
+def renew_tenant_subscription(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(*_MANAGEMENT_ROLES)),
+):
+    return renew_subscription(db, int(current_user["tenant_id"]))

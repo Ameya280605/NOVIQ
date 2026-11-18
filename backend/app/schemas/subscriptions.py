@@ -38,6 +38,10 @@ class SubscriptionPlanUpdate(BaseModel):
     plan_code: str
 
 
+class SubscriptionActivationRequest(BaseModel):
+    plan_code: str
+
+
 class SubscriptionCancelResponse(BaseModel):
     subscription: SubscriptionResponse
 
