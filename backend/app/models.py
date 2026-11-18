@@ -5,6 +5,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    BigInteger,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -70,7 +71,9 @@ class Plan(Base):
 
     max_documents: Mapped[int | None] = mapped_column(nullable=True)
 
-    max_storage_bytes: Mapped[int | None] = mapped_column(nullable=True)
+    max_storage_bytes: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
 
     monthly_price_minor: Mapped[int | None] = mapped_column(nullable=True)
 

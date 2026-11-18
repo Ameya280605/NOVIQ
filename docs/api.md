@@ -13,7 +13,7 @@ claims are not trusted. There is no payment gateway integration.
 | `POST /subscription/activate` | owner/admin | Activate an active plan using `{"plan_code":"starter"}`. Repeating the same active request is idempotent. |
 | `PATCH /subscription` | owner/admin | Change the subscription plan using `{"plan_code":"starter"}`. Only active plans are accepted; canceled subscriptions cannot be changed. |
 | `POST /subscription/cancel` | owner/admin | Schedule cancellation at the end of the current period. The operation is idempotent. |
-| `POST /subscription/renew` | owner/admin | Renew or reactivate the authenticated tenant's subscription for a 30-day period. Repeating an unchanged active renewal is idempotent. |
+| `POST /subscription/renew` | owner/admin | Reverse a pending period-end cancellation without changing an unexpired billing period; renew an expired or canceled subscription for 30 days. Repeating the request is idempotent. |
 | `GET /subscription/usage` | Any authenticated tenant role | Return current users, projects, tasks, documents, and non-deleted document storage usage with plan limits. |
 
 Management changes are limited to the local subscription record and do not
