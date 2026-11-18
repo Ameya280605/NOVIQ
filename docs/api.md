@@ -1,5 +1,21 @@
 # NOVIQ API and background processing
 
+## Subscriptions
+
+Subscription endpoints never accept a tenant ID. Tenant scope is derived from
+the authenticated user after the database-backed role check; JWT role and plan
+claims are not trusted. There is no payment gateway integration.
+
+| Method and path | Access | Purpose |
+| --- | --- | --- |
+| `GET /plans` | Any authenticated tenant role | List active plans. |
+| `GET /subscription` | Any authenticated tenant role | Get the authenticated tenant's subscription; returns `404` when none exists. |
+| `PATCH /subscription` | owner/admin | Change the subscription plan using `{"plan_code":"starter"}`. Only active plans are accepted; canceled subscriptions cannot be changed. |
+| `POST /subscription/cancel` | owner/admin | Schedule cancellation at the end of the current period. The operation is idempotent. |
+
+Management changes are limited to the local subscription record and do not
+charge or contact a payment provider.
+
 ## Notifications
 
 Authenticated users can access only notifications addressed to their own user

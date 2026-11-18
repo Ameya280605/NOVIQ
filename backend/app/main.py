@@ -12,6 +12,7 @@ from backend.app.routes.project_risk_routes import router as project_risk_router
 from backend.app.routes.tasks_routes import router as tasks_router
 from backend.app.routes.users_routes import router as users_router
 from backend.app.routes.notifications_routes import router as notifications_router
+from backend.app.routes.subscriptions_routes import router as subscriptions_router
 from backend.app.infra.redis_client import close_redis_client
 from backend.app.events import event_publisher
 from backend.app.event_handlers import register_production_handlers
@@ -36,6 +37,7 @@ app.include_router(documents_router)
 app.include_router(assistant_router)
 app.include_router(health_router)
 app.include_router(notifications_router)
+app.include_router(subscriptions_router)
 
 
 @app.get("/")

@@ -19,7 +19,9 @@ from backend.app.models import (
     PlanEntitlement,
     Subscription,
     Tenant,
+    User,
 )
+from backend.app.utils.jwt import create_access_token
 
 
 class SubscriptionTests(unittest.TestCase):
@@ -51,6 +53,8 @@ class SubscriptionTests(unittest.TestCase):
                     enabled=True,
                 )
             )
+            db.add(Plan(code="starter", name="Starter", is_active=True))
+            db.add(Plan(code="legacy", name="Legacy", is_active=False))
             db.commit()
 
         def override_get_db():
@@ -71,6 +75,140 @@ class SubscriptionTests(unittest.TestCase):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+
+    @staticmethod
+    def _headers(user_id: int, tenant_id: int, role: str) -> dict[str, str]:
+        token = create_access_token(
+            {"sub": str(user_id), "tenant_id": tenant_id, "role": role}
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    def _create_user(self, db, tenant_name: str, role: str):
+        tenant = Tenant(name=tenant_name)
+        db.add(tenant)
+        db.flush()
+        user = User(
+            tenant_id=tenant.id,
+            name=f"{role} user",
+            email=f"{tenant_name}-{role}@example.test",
+            password_hash="not-a-real-password-hash",
+            role=role,
+        )
+        db.add(user)
+        db.flush()
+        return tenant, user
+
+    def test_lists_active_plans_and_retrieves_only_authenticated_tenant_subscription(
+        self,
+    ) -> None:
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Tenant One", "owner")
+            other_tenant, other_owner = self._create_user(
+                db, "Tenant Two", "owner"
+            )
+            free_plan = db.query(Plan).filter(Plan.code == "free").one()
+            start = datetime.now(timezone.utc)
+            db.add(
+                Subscription(
+                    tenant_id=tenant.id,
+                    plan_id=free_plan.id,
+                    current_period_start=start,
+                    current_period_end=start + timedelta(days=30),
+                )
+            )
+            db.commit()
+            owner_headers = self._headers(owner.id, tenant.id, "owner")
+            other_headers = self._headers(
+                other_owner.id, other_tenant.id, "owner"
+            )
+
+        plans = self.client.get("/plans", headers=owner_headers)
+        self.assertEqual(plans.status_code, 200, plans.text)
+        self.assertEqual(
+            {plan["code"] for plan in plans.json()},
+            {"free", "starter"},
+        )
+
+        subscription = self.client.get(
+            "/subscription", headers=owner_headers
+        )
+        self.assertEqual(subscription.status_code, 200, subscription.text)
+        self.assertEqual(subscription.json()["tenant_id"], tenant.id)
+        self.assertEqual(subscription.json()["plan"]["code"], "free")
+
+        missing_other_subscription = self.client.get(
+            "/subscription", headers=other_headers
+        )
+        self.assertEqual(missing_other_subscription.status_code, 404)
+
+    def test_subscription_management_uses_database_role_and_validates_plan(self):
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Managed Tenant", "owner")
+            member = User(
+                tenant_id=tenant.id,
+                name="member user",
+                email="managed-member@example.test",
+                password_hash="not-a-real-password-hash",
+                role="member",
+            )
+            db.add(member)
+            db.flush()
+            free_plan = db.query(Plan).filter(Plan.code == "free").one()
+            start = datetime.now(timezone.utc)
+            db.add(
+                Subscription(
+                    tenant_id=tenant.id,
+                    plan_id=free_plan.id,
+                    current_period_start=start,
+                    current_period_end=start + timedelta(days=30),
+                )
+            )
+            db.commit()
+            owner_headers = self._headers(owner.id, tenant.id, "owner")
+            forged_member_headers = self._headers(member.id, tenant.id, "owner")
+
+        invalid_plan = self.client.patch(
+            "/subscription",
+            headers=forged_member_headers,
+            json={"plan_code": "does-not-exist"},
+        )
+        self.assertEqual(invalid_plan.status_code, 403)
+
+        invalid_plan = self.client.patch(
+            "/subscription",
+            headers=owner_headers,
+            json={"plan_code": "legacy"},
+        )
+        self.assertEqual(invalid_plan.status_code, 400)
+
+        changed = self.client.patch(
+            "/subscription",
+            headers=owner_headers,
+            json={"plan_code": "starter"},
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["plan"]["code"], "starter")
+
+        canceled = self.client.post(
+            "/subscription/cancel", headers=owner_headers
+        )
+        self.assertEqual(canceled.status_code, 200, canceled.text)
+        self.assertTrue(canceled.json()["subscription"]["cancel_at_period_end"])
+
+    def test_subscription_rejects_tampered_tenant_claim_and_reports_missing_subscription(
+        self,
+    ) -> None:
+        with self.session_factory() as db:
+            tenant, owner = self._create_user(db, "Claim Tenant", "owner")
+            db.commit()
+            valid_headers = self._headers(owner.id, tenant.id, "owner")
+            tampered_headers = self._headers(owner.id, tenant.id + 100, "owner")
+
+        missing = self.client.get("/subscription", headers=valid_headers)
+        self.assertEqual(missing.status_code, 404)
+
+        tampered = self.client.get("/subscription", headers=tampered_headers)
+        self.assertEqual(tampered.status_code, 401)
 
     def test_registration_creates_tenant_scoped_free_subscription(self) -> None:
         response = self.client.post(
@@ -98,7 +236,7 @@ class SubscriptionTests(unittest.TestCase):
     def test_tenant_can_have_only_one_subscription(self) -> None:
         with self.session_factory() as db:
             tenant = Tenant(name="Unique Subscription Tenant")
-            plan = db.query(Plan).one()
+            plan = db.query(Plan).filter(Plan.code == "free").one()
             db.add(tenant)
             db.flush()
             start = datetime.now(timezone.utc)
@@ -124,7 +262,7 @@ class SubscriptionTests(unittest.TestCase):
 
     def test_registration_does_not_recreate_missing_free_plan(self) -> None:
         with self.session_factory() as db:
-            plan = db.query(Plan).one()
+            plan = db.query(Plan).filter(Plan.code == "free").one()
             db.delete(plan.entitlements[0])
             db.delete(plan)
             db.commit()
@@ -141,5 +279,8 @@ class SubscriptionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         with self.session_factory() as db:
-            self.assertEqual(db.query(Plan).count(), 0)
+            self.assertEqual(db.query(Plan).count(), 2)
+            self.assertIsNone(
+                db.query(Plan).filter(Plan.code == "free").one_or_none()
+            )
             self.assertEqual(db.query(Subscription).count(), 0)
