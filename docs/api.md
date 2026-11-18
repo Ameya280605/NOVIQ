@@ -17,6 +17,13 @@ claims are not trusted. There is no payment gateway integration.
 Management changes are limited to the local subscription record and do not
 charge or contact a payment provider.
 
+Premium feature access is checked against the active database subscription and
+enabled plan entitlements after the authenticated user's database-backed role
+and tenant identity are verified. The assistant requires `assistant`,
+dashboard analytics require `advanced_analytics`, and project risk analysis
+requires `project_risk_analysis`. Missing or inactive subscriptions and
+disabled entitlements return `403`.
+
 Usage quotas are checked before creating users, projects, tasks, or document
 uploads. Tasks are counted through tenant-owned projects, and storage is the
 sum of non-deleted document `size_bytes`. A `403` response with a

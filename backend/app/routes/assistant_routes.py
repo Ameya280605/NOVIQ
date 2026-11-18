@@ -10,7 +10,7 @@ from backend.app.services.assistant_tools import (
     AssistantAccessDenied,
     AssistantResourceNotFound,
 )
-from backend.app.utils.roles import require_roles
+from backend.app.utils.entitlements import require_entitlement
 
 router = APIRouter(prefix="/assistant", tags=["Assistant"])
 logger = logging.getLogger(__name__)
@@ -21,7 +21,9 @@ _ASSISTANT_ROLES = ("owner", "admin", "manager", "member")
 def query_assistant(
     request: AssistantRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_ASSISTANT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("assistant", *_ASSISTANT_ROLES)
+    ),
 ):
     try:
         result = answer_question(

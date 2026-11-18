@@ -5,7 +5,7 @@ from backend.app.database import get_db
 from backend.app.models import Project
 from backend.app.schemas.project_risk import ProjectRiskResponse
 from backend.app.services.project_risk_cache import get_project_risk
-from backend.app.utils.roles import require_roles
+from backend.app.utils.entitlements import require_entitlement
 
 router = APIRouter(prefix="/projects", tags=["Project Risk Analysis"])
 _PROJECT_ROLES = ("owner", "admin", "manager", "member")
@@ -15,7 +15,9 @@ _PROJECT_ROLES = ("owner", "admin", "manager", "member")
 def get_project_risk_analysis(
     project_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_PROJECT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("project_risk_analysis", *_PROJECT_ROLES)
+    ),
 ):
     project = (
         db.query(Project)

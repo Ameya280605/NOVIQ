@@ -19,6 +19,7 @@ from backend.app.main import app
 from backend.app.models import (
     Base,
     Plan,
+    PlanEntitlement,
     Project,
     Subscription,
     Task,
@@ -142,6 +143,13 @@ class ProjectRiskCacheTests(unittest.TestCase):
             plan = Plan(code="risk-cache-test", name="Risk Cache Test")
             db.add(plan)
             db.flush()
+            db.add(
+                PlanEntitlement(
+                    plan_id=plan.id,
+                    feature_key="project_risk_analysis",
+                    enabled=True,
+                )
+            )
             period_start = datetime.now(timezone.utc)
             db.add_all(
                 [

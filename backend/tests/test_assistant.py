@@ -13,7 +13,17 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import AuditLog, Base, Project, Task, Tenant, User
+from backend.app.models import (
+    AuditLog,
+    Base,
+    Plan,
+    PlanEntitlement,
+    Project,
+    Subscription,
+    Task,
+    Tenant,
+    User,
+)
 from backend.app.services.assistant_tools import (
     AssistantAccessDenied,
     overdue_tasks,
@@ -37,6 +47,32 @@ class TenantAssistantTests(unittest.TestCase):
             other_tenant = Tenant(name="Other Assistant Tenant")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = Plan(code="assistant-test", name="Assistant Test")
+            db.add(plan)
+            db.flush()
+            db.add(
+                PlanEntitlement(
+                    plan_id=plan.id,
+                    feature_key="assistant",
+                    enabled=True,
+                )
+            )
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=now,
+                        current_period_end=now + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=now,
+                        current_period_end=now + timedelta(days=30),
+                    ),
+                ]
+            )
             self.owner = User(
                 tenant_id=tenant.id,
                 name="Assistant Owner",

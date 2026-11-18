@@ -13,7 +13,7 @@ from backend.app.schemas.dashboard import (
     TaskAnalyticsResponse,
     TeamAnalyticsResponse,
 )
-from backend.app.utils.roles import require_roles
+from backend.app.utils.entitlements import require_entitlement
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard & Analytics"])
 _TENANT_ROLES = ("owner", "admin", "manager", "member")
@@ -91,7 +91,9 @@ def get_dashboard_overview(
     start_date: date | None = None,
     end_date: date | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("advanced_analytics", *_TENANT_ROLES)
+    ),
 ):
     _validate_date_range(start_date, end_date)
     tenant_id = current_user["tenant_id"]
@@ -172,7 +174,9 @@ def get_task_analytics(
     start_date: date | None = None,
     end_date: date | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("advanced_analytics", *_TENANT_ROLES)
+    ),
 ):
     start, end = _date_range(start_date, end_date)
     tenant_id = current_user["tenant_id"]
@@ -315,7 +319,9 @@ def get_project_analytics(
     start_date: date | None = None,
     end_date: date | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("advanced_analytics", *_TENANT_ROLES)
+    ),
 ):
     start, end = _date_range(start_date, end_date)
     tenant_id = current_user["tenant_id"]
@@ -417,7 +423,9 @@ def get_team_analytics(
     start_date: date | None = None,
     end_date: date | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
+    current_user: dict = Depends(
+        require_entitlement("advanced_analytics", *_TENANT_ROLES)
+    ),
 ):
     start, end = _date_range(start_date, end_date)
     start_at, end_at = _datetime_bounds(start, end)

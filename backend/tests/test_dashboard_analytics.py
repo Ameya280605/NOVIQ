@@ -12,7 +12,16 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import Base, Project, Task, Tenant, User
+from backend.app.models import (
+    Base,
+    Plan,
+    PlanEntitlement,
+    Project,
+    Subscription,
+    Task,
+    Tenant,
+    User,
+)
 from backend.app.utils.jwt import create_access_token
 
 
@@ -33,6 +42,32 @@ class DashboardAnalyticsTests(unittest.TestCase):
             other_tenant = Tenant(name="Other Dashboard Tenant")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = Plan(code="dashboard-test", name="Dashboard Test")
+            db.add(plan)
+            db.flush()
+            db.add(
+                PlanEntitlement(
+                    plan_id=plan.id,
+                    feature_key="advanced_analytics",
+                    enabled=True,
+                )
+            )
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=now,
+                        current_period_end=now + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=now,
+                        current_period_end=now + timedelta(days=30),
+                    ),
+                ]
+            )
             owner = User(
                 tenant_id=tenant.id,
                 name="Dashboard Owner",
@@ -296,6 +331,16 @@ class DashboardAnalyticsTests(unittest.TestCase):
             empty_tenant = Tenant(name="Empty tenant")
             db.add(empty_tenant)
             db.flush()
+            plan = db.query(Plan).filter(Plan.code == "dashboard-test").one()
+            period_start = datetime.now(timezone.utc)
+            db.add(
+                Subscription(
+                    tenant_id=empty_tenant.id,
+                    plan_id=plan.id,
+                    current_period_start=period_start,
+                    current_period_end=period_start + timedelta(days=30),
+                )
+            )
             empty_owner = User(
                 tenant_id=empty_tenant.id,
                 name="Empty Owner",

@@ -13,7 +13,17 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import AuditLog, Base, Project, Task, Tenant, User
+from backend.app.models import (
+    AuditLog,
+    Base,
+    Plan,
+    PlanEntitlement,
+    Project,
+    Subscription,
+    Task,
+    Tenant,
+    User,
+)
 from backend.app.services.project_risk import (
     SCORING_VERSION,
     analyze_project_risk,
@@ -37,6 +47,32 @@ class ProjectRiskTests(unittest.TestCase):
             other_tenant = Tenant(name="Other Risk Tenant")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = Plan(code="risk-test", name="Risk Test")
+            db.add(plan)
+            db.flush()
+            db.add(
+                PlanEntitlement(
+                    plan_id=plan.id,
+                    feature_key="project_risk_analysis",
+                    enabled=True,
+                )
+            )
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=self.now,
+                        current_period_end=self.now + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=self.now,
+                        current_period_end=self.now + timedelta(days=30),
+                    ),
+                ]
+            )
             owner = User(
                 tenant_id=tenant.id,
                 name="Risk Owner",
