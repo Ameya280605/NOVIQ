@@ -16,6 +16,7 @@ from backend.app.utils.security import hash_password, verify_password
 from backend.app.utils.jwt import create_access_token, get_current_user
 from backend.app.utils.roles import require_roles
 from backend.app.utils.audit import create_audit_log
+from backend.app.services.usage import enforce_quota
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -61,6 +62,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         password_hash=hash_password(user.password),
         role="owner",
     )
+    enforce_quota(db, new_tenant.id, "users")
 
     db.add(new_user)
     db.flush()
@@ -128,6 +130,7 @@ def add_team_member(
         password_hash=hash_password(member.password),
         role=member.role,
     )
+    enforce_quota(db, current_user["tenant_id"], "users")
 
     db.add(new_member)
     db.flush()

@@ -22,6 +22,7 @@ from backend.app.services.project_risk_jobs import (
 )
 from backend.app.utils.audit import create_audit_log
 from backend.app.utils.roles import require_roles
+from backend.app.services.usage import enforce_quota
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -90,6 +91,7 @@ def create_task(
     _get_tenant_project(db, task.project_id, tenant_id)
     _validate_assignee(db, task.assigned_to, tenant_id)
     _validate_task_dates(task.start_date, task.due_date)
+    enforce_quota(db, tenant_id, "tasks")
 
     new_task = Task(
         project_id=task.project_id,

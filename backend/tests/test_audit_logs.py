@@ -12,7 +12,15 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import AuditLog, Base, Plan, Project, Tenant, User
+from backend.app.models import (
+    AuditLog,
+    Base,
+    Plan,
+    Project,
+    Subscription,
+    Tenant,
+    User,
+)
 from backend.app.utils.jwt import create_access_token
 from backend.app.utils.audit import create_audit_log
 
@@ -33,6 +41,24 @@ class AuditLogApiTests(unittest.TestCase):
             other_tenant = Tenant(name="Tenant Two")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = db.query(Plan).filter(Plan.code == "free").one()
+            period_start = datetime.now(timezone.utc)
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                ]
+            )
             self.owner = User(
                 tenant_id=tenant.id,
                 name="Owner",

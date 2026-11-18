@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET_KEY"] = "task-test-signing-key"
@@ -11,7 +12,16 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.database import get_db
 from backend.app.main import app
-from backend.app.models import AuditLog, Base, Project, Task, Tenant, User
+from backend.app.models import (
+    AuditLog,
+    Base,
+    Plan,
+    Project,
+    Subscription,
+    Task,
+    Tenant,
+    User,
+)
 from backend.app.utils.jwt import create_access_token
 
 
@@ -30,6 +40,26 @@ class TaskManagementTests(unittest.TestCase):
             other_tenant = Tenant(name="Other Task Tenant")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = Plan(code="task-test", name="Task Test")
+            db.add(plan)
+            db.flush()
+            period_start = datetime.now(timezone.utc)
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                ]
+            )
             owner = User(
                 tenant_id=tenant.id,
                 name="Owner",

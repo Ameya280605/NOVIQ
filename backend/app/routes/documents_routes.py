@@ -29,6 +29,7 @@ from backend.app.services.s3_storage import (
     s3_storage,
 )
 from backend.app.services.document_jobs import enqueue_document_cleanup
+from backend.app.services.usage import enforce_quota
 from backend.app.utils.audit import create_audit_log
 from backend.app.utils.documents import (
     get_tenant_document,
@@ -134,6 +135,8 @@ def initiate_document_upload(
     tenant_id = current_user["tenant_id"]
     user_id = int(current_user["sub"])
     _get_tenant_project(db, project_id, tenant_id)
+    enforce_quota(db, tenant_id, "documents")
+    enforce_quota(db, tenant_id, "storage_bytes", upload.size_bytes)
 
     try:
         signed_upload = s3_storage.create_upload_url(upload.content_type)

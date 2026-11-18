@@ -8,7 +8,9 @@ from backend.app.schemas.subscriptions import (
     SubscriptionCancelResponse,
     SubscriptionPlanUpdate,
     SubscriptionResponse,
+    SubscriptionUsageResponse,
 )
+from backend.app.services.usage import get_tenant_usage
 from backend.app.utils.roles import require_roles
 
 router = APIRouter(tags=["Subscriptions"])
@@ -50,6 +52,17 @@ def get_subscription(
     current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
 ):
     return _get_tenant_subscription(db, int(current_user["tenant_id"]))
+
+
+@router.get(
+    "/subscription/usage",
+    response_model=SubscriptionUsageResponse,
+)
+def get_subscription_usage(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_roles(*_TENANT_ROLES)),
+):
+    return get_tenant_usage(db, int(current_user["tenant_id"]))
 
 
 @router.patch("/subscription", response_model=SubscriptionResponse)

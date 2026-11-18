@@ -40,3 +40,16 @@ class SubscriptionPlanUpdate(BaseModel):
 
 class SubscriptionCancelResponse(BaseModel):
     subscription: SubscriptionResponse
+
+
+class UsageMetric(BaseModel):
+    used: int
+    limit: int | None
+
+
+class SubscriptionUsageResponse(BaseModel):
+    users: UsageMetric
+    projects: UsageMetric
+    tasks: UsageMetric
+    documents: UsageMetric
+    storage_bytes: UsageMetric

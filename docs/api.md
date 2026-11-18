@@ -12,9 +12,16 @@ claims are not trusted. There is no payment gateway integration.
 | `GET /subscription` | Any authenticated tenant role | Get the authenticated tenant's subscription; returns `404` when none exists. |
 | `PATCH /subscription` | owner/admin | Change the subscription plan using `{"plan_code":"starter"}`. Only active plans are accepted; canceled subscriptions cannot be changed. |
 | `POST /subscription/cancel` | owner/admin | Schedule cancellation at the end of the current period. The operation is idempotent. |
+| `GET /subscription/usage` | Any authenticated tenant role | Return current users, projects, tasks, documents, and non-deleted document storage usage with plan limits. |
 
 Management changes are limited to the local subscription record and do not
 charge or contact a payment provider.
+
+Usage quotas are checked before creating users, projects, tasks, or document
+uploads. Tasks are counted through tenant-owned projects, and storage is the
+sum of non-deleted document `size_bytes`. A `403` response with a
+`<resource> quota exceeded` detail means the requested resource would exceed
+the plan limit. A null plan limit is unlimited.
 
 ## Notifications
 

@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 _IMPORT_ENV = {
@@ -16,7 +17,16 @@ with patch.dict(os.environ, _IMPORT_ENV):
 
     from backend.app.database import get_db
     from backend.app.main import app
-    from backend.app.models import AuditLog, Base, Document, Project, Tenant, User
+    from backend.app.models import (
+        AuditLog,
+        Base,
+        Document,
+        Plan,
+        Project,
+        Subscription,
+        Tenant,
+        User,
+    )
     from backend.app.services.s3_storage import (
         ObjectMetadataMismatchError,
         ObjectNotFoundError,
@@ -53,6 +63,26 @@ class DocumentRoutesTests(unittest.TestCase):
             other_tenant = Tenant(name="Foreign document tenant")
             db.add_all([tenant, other_tenant])
             db.flush()
+            plan = Plan(code="document-test", name="Document Test")
+            db.add(plan)
+            db.flush()
+            period_start = datetime.now(timezone.utc)
+            db.add_all(
+                [
+                    Subscription(
+                        tenant_id=tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                    Subscription(
+                        tenant_id=other_tenant.id,
+                        plan_id=plan.id,
+                        current_period_start=period_start,
+                        current_period_end=period_start + timedelta(days=30),
+                    ),
+                ]
+            )
             self.tenant_id = tenant.id
             self.other_tenant_id = other_tenant.id
             self.owner = User(

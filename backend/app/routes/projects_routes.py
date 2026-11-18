@@ -19,6 +19,7 @@ from backend.app.services.project_risk_jobs import (
     refresh_project_risk_after_mutation,
 )
 from backend.app.services.project_risk_cache import invalidate_project_risk
+from backend.app.services.usage import enforce_quota
 from backend.app.utils.audit import create_audit_log
 from backend.app.utils.roles import require_roles
 
@@ -105,6 +106,7 @@ def create_project(
         project.target_deadline,
         completion_date,
     )
+    enforce_quota(db, tenant_id, "projects")
 
     new_project = Project(
         tenant_id=tenant_id,
