@@ -88,6 +88,8 @@ def _tenant_identity(request: Request) -> str:
         )
         tenant_id = payload.get("tenant_id")
         if tenant_id is not None:
+            request.state.tenant_id = tenant_id
+            request.state.user_id = payload.get("sub")
             return f"tenant:{tenant_id}"
     except Exception:
         pass
@@ -166,6 +168,12 @@ async def request_logging_middleware(
                 "duration_ms": round(duration_seconds * 1000, 3),
                 "outcome": outcome,
             }
+            tenant_id = getattr(request.state, "tenant_id", None)
+            user_id = getattr(request.state, "user_id", None)
+            if tenant_id is not None:
+                fields["tenant_id"] = tenant_id
+            if user_id is not None:
+                fields["user_id"] = user_id
             _safe_log(fields)
             return response
 
