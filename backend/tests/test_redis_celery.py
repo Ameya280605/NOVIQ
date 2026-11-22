@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET_KEY"] = "redis-celery-test-signing-key"
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from backend.app.celery_app import BROKER_URL, RESULT_BACKEND, celery_app
+from backend.app.routes import health_routes
 from backend.app.infra import redis_client
 from backend.app.main import app
 from backend.app.tasks.health import echo_task
@@ -99,6 +100,72 @@ class RedisCeleryFoundationTests(unittest.TestCase):
             return_value=unavailable_client,
         ):
             response = self.client.get("/health/redis")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], {"status": "unavailable"})
+
+    def test_liveness_health_is_available_without_dependencies(self) -> None:
+        response = self.client.get("/health/live")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_readiness_health_checks_all_dependencies(self) -> None:
+        database_connection = MagicMock()
+        database_context = database_connection.__enter__.return_value
+        healthy_redis = Mock()
+        with patch.object(
+            health_routes.engine,
+            "connect",
+            return_value=database_connection,
+        ), patch(
+            "backend.app.routes.health_routes.get_redis_client",
+            return_value=healthy_redis,
+        ), patch.object(
+            celery_app.control,
+            "ping",
+            return_value=[{"worker@host": {"ok": "pong"}}],
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+        database_context.execute.assert_called_once()
+        healthy_redis.ping.assert_called_once_with()
+
+    def test_readiness_health_is_unavailable_when_dependency_fails(self) -> None:
+        with patch.object(
+            health_routes.engine,
+            "connect",
+            side_effect=health_routes.SQLAlchemyError("database unavailable"),
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], {"status": "unavailable"})
+
+        with patch.object(
+            health_routes.engine,
+            "connect",
+            return_value=MagicMock(),
+        ), patch(
+            "backend.app.routes.health_routes.get_redis_client",
+            side_effect=RedisConnectionError("redis unavailable"),
+        ):
+            response = self.client.get("/health/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], {"status": "unavailable"})
+
+        with patch.object(
+            health_routes.engine,
+            "connect",
+            return_value=MagicMock(),
+        ), patch(
+            "backend.app.routes.health_routes.get_redis_client",
+            return_value=Mock(),
+        ), patch.object(celery_app.control, "ping", return_value=[]):
+            response = self.client.get("/health/ready")
+
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"], {"status": "unavailable"})
 
