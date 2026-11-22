@@ -18,6 +18,8 @@ from backend.app.events import event_publisher
 from backend.app.event_handlers import register_production_handlers
 from backend.app.utils.jwt import validate_jwt_secret
 from backend.app.middleware import request_logging_middleware
+from backend.app.metrics import render_metrics
+from starlette.responses import PlainTextResponse
 
 
 @asynccontextmanager
@@ -42,6 +44,16 @@ app.include_router(assistant_router)
 app.include_router(health_router)
 app.include_router(notifications_router)
 app.include_router(subscriptions_router)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return PlainTextResponse(
+        render_metrics(),
+        headers={
+            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+        },
+    )
 
 
 @app.get("/")

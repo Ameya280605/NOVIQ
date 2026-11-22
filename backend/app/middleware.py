@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from backend.app.metrics import record_http_request
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,32 @@ def _safe_log(fields: dict[str, object]) -> None:
         logger.info("api_request", extra=fields)
     except Exception:
         # Logging must never change the request outcome.
+        return
+
+
+def _metric_route(request: Request) -> str:
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+    if request.url.path == "/metrics":
+        return "/metrics"
+    return "unmatched"
+
+
+def _safe_metric(
+    request: Request,
+    status_code: int,
+    duration_seconds: float,
+) -> None:
+    try:
+        record_http_request(
+            request.method,
+            _metric_route(request),
+            status_code,
+            duration_seconds,
+        )
+    except Exception:
         return
 
 
@@ -50,8 +77,10 @@ async def request_logging_middleware(
         )
         return response
     finally:
+        duration_seconds = perf_counter() - started_at
         if response is not None:
             response.headers["X-Request-ID"] = request_id
+        _safe_metric(request, status_code, duration_seconds)
 
         fields: dict[str, object] = {
             "request_id": request_id,
