@@ -1,21 +1,52 @@
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Literal
+
+from backend.app.utils.security import MAX_PASSWORD_BYTES
 
 
 class UserCreate(BaseModel):
-    company_name: str
-    name: str
-    email: str
-    password: str
-    
+    company_name: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_valid(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("email must be valid")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def password_must_fit_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError("password must be at most 72 UTF-8 bytes")
+        return value
+
 
 class TeamMemberCreate(BaseModel):
-    name: str
-    email: str
-    password: str
-    role: str = "member"
+    name: str = Field(min_length=1, max_length=255)
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["owner", "admin", "manager", "member"] = "member"
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_valid(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("email must be valid")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def password_must_fit_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            raise ValueError("password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class RoleUpdate(BaseModel):
@@ -23,8 +54,15 @@ class RoleUpdate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def email_must_be_valid(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("email must be valid")
+        return value
 
 
 class UserResponse(BaseModel):

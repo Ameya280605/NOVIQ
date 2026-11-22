@@ -73,6 +73,13 @@ class AuditLogApiTests(unittest.TestCase):
                 password_hash="not-a-real-password-hash",
                 role="member",
             )
+            self.admin = User(
+                tenant_id=tenant.id,
+                name="Admin",
+                email="admin@example.test",
+                password_hash="not-a-real-password-hash",
+                role="admin",
+            )
             self.other_owner = User(
                 tenant_id=other_tenant.id,
                 name="Other Owner",
@@ -80,10 +87,11 @@ class AuditLogApiTests(unittest.TestCase):
                 password_hash="not-a-real-password-hash",
                 role="owner",
             )
-            db.add_all([self.owner, self.member, self.other_owner])
+            db.add_all([self.owner, self.member, self.admin, self.other_owner])
             db.commit()
             self.owner_id = self.owner.id
             self.member_id = self.member.id
+            self.admin_id = self.admin.id
             self.tenant_id = tenant.id
             self.other_owner_id = self.other_owner.id
             self.other_tenant_id = other_tenant.id
@@ -102,6 +110,9 @@ class AuditLogApiTests(unittest.TestCase):
         )
         self.member_headers = self._headers(
             self.member_id, self.tenant_id, "member"
+        )
+        self.admin_headers = self._headers(
+            self.admin_id, self.tenant_id, "admin"
         )
         self.other_owner_headers = self._headers(
             self.other_owner_id, self.other_tenant_id, "owner"
@@ -261,6 +272,29 @@ class AuditLogApiTests(unittest.TestCase):
         serialized = str(rows)
         self.assertNotIn("do-not-audit-this-password", serialized)
         self.assertNotIn("private text", serialized)
+
+    def test_admin_cannot_create_owner(self) -> None:
+        response = self.client.post(
+            "/users/members",
+            headers=self.admin_headers,
+            json={
+                "name": "Unauthorized Owner",
+                "email": "unauthorized-owner@example.test",
+                "password": "secure-password",
+                "role": "owner",
+            },
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+
+    def test_members_reject_deleted_user_token(self) -> None:
+        with self.session_factory() as db:
+            db.delete(db.get(User, self.member_id))
+            db.commit()
+
+        response = self.client.get(
+            "/users/members", headers=self.member_headers
+        )
+        self.assertEqual(response.status_code, 401, response.text)
 
     def test_registration_is_audited_with_new_user_as_actor(self) -> None:
         response = self.client.post(

@@ -10,6 +10,20 @@ load_dotenv()
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+MIN_SECRET_KEY_LENGTH = 32
+MIN_UNIQUE_SECRET_CHARACTERS = 16
+
+
+def validate_jwt_secret() -> None:
+    """Require a securely generated, high-entropy signing secret."""
+    if (
+        not SECRET_KEY
+        or len(SECRET_KEY) < MIN_SECRET_KEY_LENGTH
+        or len(set(SECRET_KEY)) < MIN_UNIQUE_SECRET_CHARACTERS
+    ):
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be a high-entropy value of at least 32 characters"
+        )
 
 
 def create_access_token(data: dict):

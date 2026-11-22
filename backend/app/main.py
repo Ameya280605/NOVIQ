@@ -16,10 +16,12 @@ from backend.app.routes.subscriptions_routes import router as subscriptions_rout
 from backend.app.infra.redis_client import close_redis_client
 from backend.app.events import event_publisher
 from backend.app.event_handlers import register_production_handlers
+from backend.app.utils.jwt import validate_jwt_secret
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    validate_jwt_secret()
     register_production_handlers(event_publisher)
     yield
     close_redis_client()

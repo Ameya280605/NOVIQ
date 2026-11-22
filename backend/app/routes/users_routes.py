@@ -13,7 +13,7 @@ from backend.app.schemas.users import (
     RoleUpdate,
 )
 from backend.app.utils.security import hash_password, verify_password
-from backend.app.utils.jwt import create_access_token, get_current_user
+from backend.app.utils.jwt import create_access_token
 from backend.app.utils.roles import require_roles
 from backend.app.utils.audit import create_audit_log
 from backend.app.services.usage import enforce_quota
@@ -105,7 +105,9 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
 @router.get("/members", response_model=list[UserResponse])
 def get_members(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(
+        require_roles("owner", "admin", "manager", "member")
+    ),
 ):
     members = db.query(User).filter(User.tenant_id == current_user["tenant_id"]).all()
 
@@ -122,6 +124,11 @@ def add_team_member(
 
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    if member.role == "owner" and current_user["role"] != "owner":
+        raise HTTPException(
+            status_code=403, detail="Only owners can assign the owner role"
+        )
 
     new_member = User(
         tenant_id=current_user["tenant_id"],
