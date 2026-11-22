@@ -17,6 +17,7 @@ from backend.app.infra.redis_client import close_redis_client
 from backend.app.events import event_publisher
 from backend.app.event_handlers import register_production_handlers
 from backend.app.utils.jwt import validate_jwt_secret
+from backend.app.middleware import request_logging_middleware
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="NOVIQ", lifespan=lifespan)
+app.middleware("http")(request_logging_middleware)
 
 app.include_router(projects_router)
 app.include_router(project_risk_router)

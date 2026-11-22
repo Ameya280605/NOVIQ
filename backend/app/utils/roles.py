@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db
@@ -10,6 +10,7 @@ def require_roles(*allowed_roles):
     def role_checker(
         current_user: dict = Depends(get_current_user),
         db: Session = Depends(get_db),
+        request: Request = None,
     ):
         try:
             user_id = int(current_user["sub"])
@@ -37,6 +38,9 @@ def require_roles(*allowed_roles):
         verified_user["sub"] = str(user.id)
         verified_user["tenant_id"] = user.tenant_id
         verified_user["role"] = user.role
+        if request is not None:
+            request.state.user_id = user.id
+            request.state.tenant_id = user.tenant_id
         return verified_user
 
     return role_checker

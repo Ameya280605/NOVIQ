@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from jose import jwt
 from dotenv import load_dotenv
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 load_dotenv()
 
@@ -45,7 +45,8 @@ def create_access_token(data: dict):
 
 security = HTTPBearer()
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request = None,
 ):
     try:
         token = credentials.credentials
@@ -56,6 +57,9 @@ def get_current_user(
             algorithms=[ALGORITHM]
         )
 
+        if request is not None:
+            request.state.user_id = payload.get("sub")
+            request.state.tenant_id = payload.get("tenant_id")
         return payload
 
     except Exception:
