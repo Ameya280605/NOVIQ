@@ -1,0 +1,96 @@
+flowchart TB
+    Clients["Clients"]
+    ACM["ACM certificate"]
+    S3["Private S3 bucket"]
+    ECR["ECR image registry"]
+    Secrets["Secrets Manager"]
+    CW["CloudWatch logs and metrics"]
+    SSM["Systems Manager"]
+
+    subgraph Region["AWS Region"]
+        subgraph VPC["NOVIQ VPC across two Availability Zones"]
+            IGW["Internet Gateway"]
+            ALB["HTTPS ALB across public subnets"]
+
+            subgraph AZA["Availability Zone A"]
+                PubA["Public subnet A"]
+                NAT_A["NAT Gateway A"]
+                subgraph AppSubnetA["Private application subnet A"]
+                    API_A["EC2 API ASG instance"]
+                    WorkerA["EC2 Celery worker"]
+                    Beat["EC2 singleton Celery Beat"]
+                end
+                subgraph DataSubnetA["Private data subnet A"]
+                    DataA["RDS and Redis subnet placement"]
+                end
+            end
+
+            subgraph AZB["Availability Zone B"]
+                PubB["Public subnet B"]
+                NAT_B["NAT Gateway B"]
+                subgraph AppSubnetB["Private application subnet B"]
+                    API_B["EC2 API ASG instance"]
+                    WorkerB["EC2 Celery worker capacity"]
+                end
+                subgraph DataSubnetB["Private data subnet B"]
+                    DataB["RDS and Redis subnet placement"]
+                end
+            end
+
+            RDS["Private RDS PostgreSQL Multi-AZ"]
+            Redis["Private ElastiCache Redis"]
+            S3EP["S3 gateway VPC endpoint"]
+            VPCE["Optional ECR, CloudWatch, Secrets Manager, and SSM interface endpoints"]
+        end
+    end
+
+    Clients -->|HTTPS| IGW
+    IGW --> ALB
+    ALB -. deployed in .-> PubA
+    ALB -. deployed in .-> PubB
+    ACM -. certificate .-> ALB
+    ALB --> API_A
+    ALB --> API_B
+
+    RDS -. subnet group .-> DataA
+    RDS -. subnet group .-> DataB
+    Redis -. subnet group .-> DataA
+    Redis -. subnet group .-> DataB
+
+    API_A --> RDS
+    API_B --> RDS
+    WorkerA --> RDS
+    WorkerB --> RDS
+    Beat --> RDS
+
+    API_A --> Redis
+    API_B --> Redis
+    WorkerA --> Redis
+    WorkerB --> Redis
+    Beat --> Redis
+
+    API_A --> S3EP
+    API_B --> S3EP
+    WorkerA --> S3EP
+    WorkerB --> S3EP
+    S3EP --> S3
+    Clients -. short-lived presigned URL .-> S3
+
+    API_A --> VPCE
+    API_B --> VPCE
+    WorkerA --> VPCE
+    WorkerB --> VPCE
+    Beat --> VPCE
+    VPCE --> ECR
+    Secrets --> API_A
+    Secrets --> API_B
+    Secrets --> WorkerA
+    Secrets --> WorkerB
+    Secrets --> Beat
+    CW --> VPCE
+    SSM --> VPCE
+
+    AppSubnetA -. private egress route .-> NAT_A
+    AppSubnetB -. private egress route .-> NAT_B
+    NAT_A --> IGW
+    NAT_B --> IGW
